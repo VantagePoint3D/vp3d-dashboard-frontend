@@ -129,7 +129,7 @@ input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacit
 /* ── TABLE ────────────────────────────────────────────── */
 .table-area{padding:0 24px 32px}
 .table-wrap{background:var(--white);border-radius:3px;border:1px solid var(--g200);overflow:hidden}
-.scroll-x{overflow-x:auto}
+.scroll-x{overflow-x:auto;overflow-y:clip}
 table{width:100%;border-collapse:collapse;min-width:1700px}
 thead{background:var(--black);position:sticky;top:calc(var(--nav-h) + var(--sub-h));z-index:100}
 th{padding:10px 12px;text-align:left;font-family:var(--font-title);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.45);white-space:nowrap;cursor:pointer;user-select:none;transition:color 0.15s}
@@ -560,6 +560,7 @@ async function toggleChk(btn){
   S.notes[id][key]=newVal;
   btn.classList.toggle('checked',newVal);
   refreshStats();
+  persistNotesLocally();
   try{
     await api(`/api/notes/${id}`,{method:'POST',body:JSON.stringify({[key]:newVal})});
     showToast('Saved ✓');
@@ -675,6 +676,7 @@ document.addEventListener('click',e=>{
     const ph=isE?'Log an issue…':isR?'Add review link or note…':'Add feedback…';
     cell.innerHTML=val?`<span class="${txtCls}">${esc(val)}</span>`:`<span class="ph">${ph}</span>`;
     refreshStats();
+    persistNotesLocally();
     try{
       await api(`/api/notes/${id}`,{method:'POST',body:JSON.stringify({[key]:val})});
       showToast('Saved ✓');
@@ -685,6 +687,14 @@ document.addEventListener('click',e=>{
   ta.addEventListener('blur',save);
   ta.addEventListener('keydown',ev=>{if(ev.key==='Escape')ta.blur();});
 });
+
+// ── LOCAL NOTES CACHE ─────────────────────────────────
+function persistNotesLocally(){
+  try{localStorage.setItem('vp3d_notes',JSON.stringify(S.notes));}catch(e){}
+}
+function restoreNotesFromLocal(){
+  try{return JSON.parse(localStorage.getItem('vp3d_notes')||'{}');}catch(e){return{};}
+}
 
 // ── LOAD DATA ──────────────────────────────────────────
 async function doLoad(){
@@ -698,13 +708,20 @@ async function doLoad(){
   try{
     const[apptData,notesData]=await Promise.all([
       api(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${S.page}&page_size=25`),
-      api('/api/notes').catch(()=>{}),
+      api('/api/notes').catch(()=>null),
     ]);
 
     S.appts=apptData?.data||[];
     S.total =apptData?.meta?.resultCount||S.appts.length;
     S.pages =apptData?.meta?.totalPages||1;
-    S.notes =notesData||{};
+    // Restore from localStorage first, then merge server data on top
+    const localNotes=restoreNotesFromLocal();
+    const serverNotes=notesData||{};
+    const allIds=new Set([...Object.keys(localNotes),...Object.keys(serverNotes)]);
+    allIds.forEach(id=>{
+      S.notes[id]={...(localNotes[id]||{}),...(serverNotes[id]||{})};
+    });
+    persistNotesLocally();
 
     if(S.pages>1){
       document.getElementById('pager').style.display='flex';
