@@ -630,7 +630,7 @@ function pickGhlFeedback(appt){
 
 function ghlFeedbackCellHtml(appt){
   const fb = pickGhlFeedback(appt);
-  if(!fb) return \`<td>\${ecellHtml(appt.orderId,'feedback')}</td>\`;  // fall back to manual entry
+  if(!fb) return `<td>${ecellHtml(appt.orderId,'feedback')}</td>`;  // fall back to manual entry
 
   const icon = fb.sentiment==='positive' ? '👍'
              : fb.sentiment==='negative' ? '👎'
