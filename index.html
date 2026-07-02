@@ -128,13 +128,13 @@ input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacit
 
 /* ── TABLE ────────────────────────────────────────────── */
 .table-area{padding:0 24px 32px}
-.table-wrap{background:var(--white);border-radius:3px;border:1px solid var(--g200);overflow:hidden}
-.scroll-x{overflow-x:auto;overflow-y:clip}
+.table-wrap{background:var(--white);border-radius:3px;border:1px solid var(--g200);overflow:auto;max-height:calc(100vh - var(--nav-h) - var(--sub-h) - 108px)}
+.scroll-x{/* handled by table-wrap */}
 table{width:100%;border-collapse:collapse;min-width:1700px}
-thead{background:var(--black);position:sticky;top:calc(var(--nav-h) + var(--sub-h));z-index:100}
-th{padding:10px 12px;text-align:left;font-family:var(--font-title);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.45);white-space:nowrap;cursor:pointer;user-select:none;transition:color 0.15s}
+thead{background:var(--black);position:sticky;top:0;z-index:100}
+th{padding:13px 14px;text-align:left;font-family:var(--font-title);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.55);white-space:nowrap;cursor:pointer;user-select:none;transition:color 0.15s}
 th:hover{color:rgba(255,255,255,0.8)}
-th.bright{color:rgba(255,255,255,0.85)}
+th.bright{color:rgba(255,255,255,0.92)}
 th.sort-asc::after{content:' ▲';color:var(--denim)}
 th.sort-desc::after{content:' ▼';color:var(--denim)}
 th.no-sort{cursor:default}
