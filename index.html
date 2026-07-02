@@ -4,161 +4,203 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VantagePoint 3D — Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700;800;900&family=Frank+Ruhl+Libre:wght@300;400;500;700&family=Libre+Franklin:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
   color-scheme: light;
-  --navy:    #1a2744;
-  --navy2:   #243558;
-  --navy3:   #0f1a30;
-  --orange:  #e8733a;
-  --orange2: #d4622a;
-  --green:   #16a34a;
-  --green-b: #dcfce7;
-  --red:     #dc2626;
+  /* Brand palette */
+  --cream:  #FFFEF3;
+  --sand:   #E5E5D9;
+  --slate:  #A9AEA9;
+  --denim:  #7B93A3;
+  --denim2: #637d90;
+  --olive:  #9E9D8D;
+  --black:  #000000;
+  --white:  #ffffff;
+
+  /* Semantic */
+  --bg:       var(--cream);
+  --surface:  var(--white);
+  --nav-bg:   var(--black);
+  --nav-text: var(--cream);
+  --sub-bg:   var(--sand);
+  --accent:   var(--denim);
+  --accent2:  var(--denim2);
+  --muted:    var(--slate);
+
+  /* Status colors (keep functional) */
+  --green:   #3d8b5c;
+  --green-b: #d1fae5;
+  --red:     #c0392b;
   --red-b:   #fee2e2;
-  --amber:   #d97706;
+  --amber:   #b45309;
   --amber-b: #fef3c7;
-  --blue:    #2563eb;
-  --blue-b:  #dbeafe;
-  --purple:  #7c3aed;
-  --purple-b:#f5f3ff;
-  --g50:  #f9fafb;
-  --g100: #f3f4f6;
-  --g200: #e5e7eb;
-  --g300: #d1d5db;
-  --g400: #9ca3af;
-  --g500: #6b7280;
-  --g600: #4b5563;
-  --g700: #374151;
-  --g900: #111827;
+  --blue:    var(--denim);
+  --blue-b:  #dce9f0;
+  --purple:  #6d5b9a;
+  --purple-b:#ede9f6;
+
+  /* Grays */
+  --g50:  #f9faf8;
+  --g100: #f0f0ec;
+  --g200: #e2e2da;
+  --g300: #c8c8c0;
+  --g400: #a0a098;
+  --g500: #787870;
+  --g600: #585850;
+  --g700: #383830;
+  --g900: #111110;
+
+  /* Fonts */
+  --font-title: 'Gothic A1', 'Franklin Gothic Medium', 'Arial Narrow', sans-serif;
+  --font-sub:   'Frank Ruhl Libre', Georgia, serif;
+  --font-body:  'Libre Franklin', 'Franklin Gothic Book', system-ui, sans-serif;
+
+  /* Layout */
+  --nav-h:   52px;
+  --sub-h:   48px;
 }
+
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;background:var(--g100);color:var(--g900);font-size:13px;line-height:1.5}
+html,body{height:100%;font-family:var(--font-body);background:var(--bg);color:var(--g900);font-size:13px;line-height:1.5}
 
 /* ── LOCK SCREEN ──────────────────────────────────────── */
-#lock{position:fixed;inset:0;z-index:9999;background:var(--navy3);display:flex;align-items:center;justify-content:center}
+#lock{position:fixed;inset:0;z-index:9999;background:var(--black);display:flex;align-items:center;justify-content:center}
 #lock.hidden{display:none}
-.lock-box{background:white;border-radius:16px;padding:40px;width:360px;box-shadow:0 24px 64px rgba(0,0,0,0.4)}
-.lock-logo{font-size:18px;font-weight:800;color:var(--navy);margin-bottom:4px}
-.lock-sub{font-size:11px;color:var(--g400);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:28px}
-.lock-label{font-size:11px;font-weight:600;color:var(--g600);margin-bottom:6px}
-.lock-input{width:100%;border:1.5px solid var(--g200);border-radius:8px;padding:10px 12px;font-size:14px;outline:none;transition:border-color 0.15s}
-.lock-input:focus{border-color:var(--orange)}
-.lock-btn{margin-top:16px;width:100%;background:var(--orange);color:white;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;transition:background 0.15s}
-.lock-btn:hover{background:var(--orange2)}
+.lock-box{background:var(--cream);border-radius:4px;padding:44px;width:380px;box-shadow:0 32px 80px rgba(0,0,0,0.5)}
+.lock-logo{font-family:var(--font-title);font-size:20px;font-weight:900;color:var(--black);letter-spacing:0.04em;text-transform:uppercase;margin-bottom:2px}
+.lock-sub{font-family:var(--font-sub);font-size:12px;color:var(--slate);margin-bottom:32px;letter-spacing:0.02em}
+.lock-label{font-family:var(--font-body);font-size:11px;font-weight:600;color:var(--g600);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em}
+.lock-input{width:100%;border:1.5px solid var(--sand);border-radius:3px;padding:10px 12px;font-size:14px;font-family:var(--font-body);background:var(--white);outline:none;transition:border-color 0.15s}
+.lock-input:focus{border-color:var(--denim)}
+.lock-btn{margin-top:20px;width:100%;background:var(--black);color:var(--cream);border:none;border-radius:3px;padding:12px;font-size:13px;font-weight:700;font-family:var(--font-title);letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;transition:background 0.15s}
+.lock-btn:hover{background:#222}
 .lock-err{margin-top:10px;color:var(--red);font-size:12px;min-height:18px}
-.lock-host{margin-top:24px;border-top:1px solid var(--g100);padding-top:16px}
+.lock-host{margin-top:24px;border-top:1px solid var(--sand);padding-top:16px}
 
 /* ── NAV ──────────────────────────────────────────────── */
-.topnav{background:var(--navy3);color:white;padding:0 24px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:300;height:52px;box-shadow:0 2px 12px rgba(0,0,0,0.3)}
-.brand{font-size:14px;font-weight:800;color:white;letter-spacing:-0.02em;padding-right:28px;border-right:1px solid rgba(255,255,255,0.1);margin-right:8px;white-space:nowrap}
-.brand span{color:var(--orange)}
-.navtab{padding:0 16px;height:52px;display:inline-flex;align-items:center;font-size:12px;font-weight:600;color:rgba(255,255,255,0.5);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap;gap:6px}
-.navtab:hover{color:rgba(255,255,255,0.85)}
-.navtab.active{color:white;border-bottom-color:var(--orange)}
-.navtab .soon{font-size:9px;background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:4px;color:rgba(255,255,255,0.4)}
+.topnav{background:var(--nav-bg);color:var(--nav-text);padding:0 24px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:300;height:var(--nav-h);box-shadow:0 1px 0 rgba(255,255,255,0.08)}
+.brand{font-family:var(--font-title);font-size:13px;font-weight:900;color:var(--cream);letter-spacing:0.12em;text-transform:uppercase;padding-right:28px;border-right:1px solid rgba(255,255,255,0.1);margin-right:8px;white-space:nowrap}
+.brand-sub{display:block;font-size:8px;font-weight:400;letter-spacing:0.14em;color:var(--slate);margin-top:-2px;font-family:var(--font-sub)}
+.navtab{padding:0 16px;height:var(--nav-h);display:inline-flex;align-items:center;font-family:var(--font-body);font-size:11px;font-weight:600;color:rgba(255,255,255,0.45);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap;gap:6px;text-transform:uppercase;letter-spacing:0.06em}
+.navtab:hover{color:rgba(255,255,255,0.8)}
+.navtab.active{color:var(--cream);border-bottom-color:var(--denim)}
+.navtab .soon{font-size:8px;background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:2px;color:rgba(255,255,255,0.3);text-transform:none;letter-spacing:0}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
-.apihost-badge{font-size:10px;color:var(--g400);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.btn-sm{padding:5px 12px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s}
-.btn-outline{background:transparent;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6)}
-.btn-outline:hover{border-color:rgba(255,255,255,0.4);color:white}
+.apihost-badge{font-size:10px;color:var(--slate);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn-sm{padding:5px 12px;border-radius:3px;border:none;font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s;font-family:var(--font-body);text-transform:uppercase;letter-spacing:0.04em}
+.btn-outline{background:transparent;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.5)}
+.btn-outline:hover{border-color:rgba(255,255,255,0.4);color:var(--cream)}
 
 /* ── PAGES ────────────────────────────────────────────── */
 .page{display:none}
 .page.active{display:block}
 
-/* ── COMING SOON PLACEHOLDER ──────────────────────────── */
+/* ── COMING SOON ──────────────────────────────────────── */
 .soon-page{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;color:var(--g400);gap:12px}
-.soon-icon{font-size:48px;opacity:0.4}
-.soon-title{font-size:20px;font-weight:700;color:var(--g600)}
-.soon-desc{font-size:13px;color:var(--g400);text-align:center;max-width:360px}
+.soon-icon{font-size:48px;opacity:0.3}
+.soon-title{font-family:var(--font-title);font-size:18px;font-weight:800;color:var(--g600);text-transform:uppercase;letter-spacing:0.1em}
+.soon-desc{font-family:var(--font-sub);font-size:14px;color:var(--g400);text-align:center;max-width:360px}
 
-/* ── SUBHEADER (Jobs page) ────────────────────────────── */
-.subheader{background:var(--navy);padding:10px 24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ctrl{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:white;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;outline:none;transition:border-color 0.15s}
-.ctrl:focus{border-color:var(--orange)}
-.ctrl option{background:#1e2d4d}
+/* ── SUBHEADER ────────────────────────────────────────── */
+.subheader{background:var(--sub-bg);padding:0 24px;display:flex;align-items:center;gap:10px;flex-wrap:nowrap;position:sticky;top:var(--nav-h);z-index:200;height:var(--sub-h);border-bottom:1px solid var(--g200)}
+.ctrl{background:var(--white);border:1.5px solid var(--g200);color:var(--g700);padding:6px 10px;border-radius:3px;font-size:12px;font-family:var(--font-body);cursor:pointer;outline:none;transition:border-color 0.15s}
+.ctrl:focus{border-color:var(--denim)}
 .custom-range{display:none;align-items:center;gap:6px}
 .custom-range.show{display:flex}
-input[type="date"].ctrl::-webkit-calendar-picker-indicator{filter:invert(0.6);cursor:pointer}
-.btn-primary{background:var(--orange);color:white;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;transition:background 0.15s;white-space:nowrap}
-.btn-primary:hover{background:var(--orange2)}
-.btn-primary:disabled{opacity:0.5;cursor:wait}
+input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacity:0.5}
+.btn-primary{background:var(--black);color:var(--cream);border:none;border-radius:3px;padding:7px 16px;font-size:11px;font-weight:700;font-family:var(--font-title);letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:background 0.15s;white-space:nowrap}
+.btn-primary:hover{background:#222}
+.btn-primary:disabled{opacity:0.4;cursor:wait}
 
 /* ── STATS BAR ────────────────────────────────────────── */
-.stats{display:flex;gap:10px;padding:14px 24px;overflow-x:auto;scrollbar-width:none}
+.stats{display:flex;gap:10px;padding:16px 24px;overflow-x:auto;scrollbar-width:none;background:var(--bg)}
 .stats::-webkit-scrollbar{display:none}
-.stat{background:white;border-radius:8px;padding:11px 16px;min-width:115px;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,0.07)}
-.stat-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--g400)}
-.stat-val{font-size:22px;font-weight:800;margin-top:3px;color:var(--g900)}
+.stat{background:var(--white);border-radius:3px;padding:12px 18px;min-width:120px;flex-shrink:0;border:1px solid var(--g200)}
+.stat-lbl{font-family:var(--font-body);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--slate)}
+.stat-val{font-family:var(--font-title);font-size:24px;font-weight:900;margin-top:2px;color:var(--g900)}
 .sv-green {color:var(--green)}
 .sv-red   {color:var(--red)}
 .sv-amber {color:var(--amber)}
-.sv-navy  {color:var(--navy)}
+.sv-denim {color:var(--denim)}
 
 /* ── TABLE ────────────────────────────────────────────── */
-.table-area{padding:0 24px 28px}
-.table-wrap{background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:hidden}
+.table-area{padding:0 24px 32px}
+.table-wrap{background:var(--white);border-radius:3px;border:1px solid var(--g200);overflow:hidden}
 .scroll-x{overflow-x:auto}
-table{width:100%;border-collapse:collapse;min-width:1400px}
-thead{background:var(--navy);position:sticky;top:52px;z-index:100}
-th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:rgba(255,255,255,0.5);white-space:nowrap}
-th.bright{color:rgba(255,255,255,0.9)}
+table{width:100%;border-collapse:collapse;min-width:1700px}
+thead{background:var(--black);position:sticky;top:calc(var(--nav-h) + var(--sub-h));z-index:100}
+th{padding:10px 12px;text-align:left;font-family:var(--font-title);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.45);white-space:nowrap;cursor:pointer;user-select:none;transition:color 0.15s}
+th:hover{color:rgba(255,255,255,0.8)}
+th.bright{color:rgba(255,255,255,0.85)}
+th.sort-asc::after{content:' ▲';color:var(--denim)}
+th.sort-desc::after{content:' ▼';color:var(--denim)}
+th.no-sort{cursor:default}
 td{padding:10px 12px;border-bottom:1px solid var(--g100);vertical-align:top}
 tr:last-child td{border-bottom:none}
-tr:hover td{background:#fafafa}
-tr.cancelled td{opacity:0.4}
+tr:hover td{background:#fafaf8}
+tr.cancelled td{opacity:0.35}
 
 /* ── BADGES ───────────────────────────────────────────── */
-.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;white-space:nowrap}
+.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:2px;font-size:10px;font-weight:700;font-family:var(--font-body);white-space:nowrap;letter-spacing:0.04em;text-transform:uppercase}
 .b-green {background:var(--green-b);color:var(--green)}
 .b-red   {background:var(--red-b);  color:var(--red)}
 .b-amber {background:var(--amber-b);color:var(--amber)}
-.b-blue  {background:var(--blue-b); color:var(--blue)}
+.b-blue  {background:var(--blue-b); color:var(--denim2)}
 .b-purple{background:var(--purple-b);color:var(--purple)}
 .b-gray  {background:var(--g100);   color:var(--g500)}
 
 /* ── SERVICE TAGS ─────────────────────────────────────── */
 .stags{display:flex;flex-wrap:wrap;gap:3px}
-.stag{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap;background:var(--blue-b);color:var(--blue)}
+.stag{display:inline-block;padding:2px 7px;border-radius:2px;font-size:10px;font-weight:600;font-family:var(--font-body);white-space:nowrap;background:var(--blue-b);color:var(--denim2);letter-spacing:0.02em}
 .stag.v {background:var(--purple-b);color:var(--purple)}
 .stag.d {background:var(--green-b); color:var(--green)}
-.stag.t {background:#fff7ed;        color:#c2410c}
+.stag.t {background:#fff7ed;        color:#b45309}
 .stag.f {background:var(--g100);    color:var(--g600)}
 .stag.tw{background:#1a2744;        color:#93c5fd}
 
 /* ── CELL TYPES ───────────────────────────────────────── */
-.date-main{font-weight:700;font-size:12px}
-.date-sub {color:var(--g400);font-size:10px;margin-top:1px}
-.addr-main{font-weight:600;font-size:12px}
-.addr-sub {color:var(--g400);font-size:10px;margin-top:1px}
-.num-big  {font-size:15px;font-weight:800}
+.date-main{font-family:var(--font-title);font-weight:700;font-size:12px;letter-spacing:0.01em}
+.date-sub {color:var(--slate);font-size:10px;margin-top:1px;font-family:var(--font-body)}
+.addr-main{font-family:var(--font-body);font-weight:600;font-size:12px}
+.addr-sub {color:var(--slate);font-size:10px;margin-top:1px}
+.num-big  {font-family:var(--font-title);font-size:15px;font-weight:800}
 .muted    {color:var(--g300);font-size:10px}
-.del-txt  {font-size:11px;color:var(--g700)}
+.del-txt  {font-size:11px;color:var(--g700);font-family:var(--font-body)}
 
-/* ── EDITABLE CELLS ───────────────────────────────────── */
-.ecell{min-height:28px;border:1.5px solid transparent;border-radius:5px;padding:3px 6px;cursor:text;transition:border-color 0.12s,background 0.12s;min-width:160px}
+/* ── EDITABLE TEXT CELLS ──────────────────────────────── */
+.ecell{min-height:28px;border:1.5px solid transparent;border-radius:3px;padding:3px 6px;cursor:text;transition:border-color 0.12s,background 0.12s;min-width:160px}
 .ecell:hover{border-color:var(--g200);background:var(--g50)}
-.ecell.editing{border-color:var(--orange);background:white}
+.ecell.editing{border-color:var(--denim);background:var(--white)}
 .ecell.has-err{background:#fff5f5}
-.ecell textarea{width:100%;min-height:52px;border:none;background:transparent;font-family:inherit;font-size:11px;color:var(--g900);resize:vertical;outline:none;line-height:1.5}
+.ecell textarea{width:100%;min-height:52px;border:none;background:transparent;font-family:var(--font-body);font-size:11px;color:var(--g900);resize:vertical;outline:none;line-height:1.5}
 .ph    {color:var(--g300);font-style:italic;font-size:11px}
 .fb-txt{color:var(--g700);font-size:11px;line-height:1.4}
 .er-txt{color:var(--red); font-size:11px;line-height:1.4}
+.rv-txt{color:var(--denim2);font-size:11px;line-height:1.4}
+
+/* ── CHECKBOX CELLS ───────────────────────────────────── */
+.chk-cell{display:flex;align-items:flex-start;justify-content:center;padding-top:2px}
+.chk-btn{width:22px;height:22px;border-radius:3px;border:1.5px solid var(--g200);background:var(--white);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;flex-shrink:0}
+.chk-btn:hover{border-color:var(--denim)}
+.chk-btn.checked{background:var(--black);border-color:var(--black)}
+.chk-btn.checked::after{content:'✓';color:var(--cream);font-size:12px;font-weight:700;line-height:1}
 
 /* ── LOADING / EMPTY ──────────────────────────────────── */
-.center-state{text-align:center;padding:56px 24px;color:var(--g400)}
+.center-state{text-align:center;padding:56px 24px;color:var(--g400);font-family:var(--font-sub)}
 @keyframes spin{to{transform:rotate(360deg)}}
-.spinner{display:inline-block;width:28px;height:28px;border:3px solid var(--g200);border-top-color:var(--orange);border-radius:50%;animation:spin 0.65s linear infinite;margin-bottom:10px}
+.spinner{display:inline-block;width:24px;height:24px;border:2px solid var(--g200);border-top-color:var(--denim);border-radius:50%;animation:spin 0.7s linear infinite;margin-bottom:10px}
 
 /* ── PAGINATION ───────────────────────────────────────── */
-.pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 24px;border-top:1px solid var(--g100);font-size:12px;color:var(--g500)}
-.pg-btn{padding:4px 12px;border:1px solid var(--g200);border-radius:5px;background:white;cursor:pointer;font-size:12px;font-weight:500;color:var(--g700)}
-.pg-btn:hover:not(:disabled){background:var(--g50)}
-.pg-btn:disabled{opacity:0.35;cursor:default}
+.pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 24px;border-top:1px solid var(--g100);font-size:12px;color:var(--g500);background:var(--white)}
+.pg-btn{padding:5px 14px;border:1.5px solid var(--g200);border-radius:3px;background:var(--white);cursor:pointer;font-size:11px;font-weight:600;color:var(--g700);font-family:var(--font-body);text-transform:uppercase;letter-spacing:0.04em}
+.pg-btn:hover:not(:disabled){background:var(--g50);border-color:var(--denim)}
+.pg-btn:disabled{opacity:0.3;cursor:default}
 
 /* ── TOAST ────────────────────────────────────────────── */
-.toast{position:fixed;bottom:24px;right:24px;background:var(--navy);color:white;padding:10px 16px;border-radius:8px;font-size:12px;font-weight:500;z-index:9000;opacity:0;transform:translateY(8px);transition:all 0.2s;pointer-events:none}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--black);color:var(--cream);padding:10px 18px;border-radius:3px;font-size:12px;font-weight:500;font-family:var(--font-body);z-index:9000;opacity:0;transform:translateY(8px);transition:all 0.2s;pointer-events:none}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.err{background:var(--red)}
 </style>
@@ -170,13 +212,12 @@ tr.cancelled td{opacity:0.4}
   <div class="lock-box">
     <div class="lock-logo">VantagePoint 3D</div>
     <div class="lock-sub">Command Center · Team Access</div>
-
     <div id="lockStep1">
       <div class="lock-label">API Server URL</div>
-      <input class="lock-input" id="lockHost" type="url" placeholder="https://your-app.railway.app" autocomplete="off">
+      <input class="lock-input" id="lockHost" type="url" placeholder="https://dashboard.vantagepointmarketingmedia.com" autocomplete="off">
       <div class="lock-label" style="margin-top:14px">Team Password</div>
       <input class="lock-input" id="lockKey" type="password" placeholder="Enter team password" autocomplete="current-password">
-      <button class="lock-btn" onclick="doLogin()">Sign In →</button>
+      <button class="lock-btn" onclick="doLogin()">Sign In</button>
       <div class="lock-err" id="lockErr"></div>
     </div>
   </div>
@@ -184,12 +225,12 @@ tr.cancelled td{opacity:0.4}
 
 <!-- TOP NAV -->
 <nav class="topnav">
-  <div class="brand">Vantage<span>Point</span> 3D</div>
-  <div class="navtab active" onclick="switchTab('jobs',this)">📋 Jobs</div>
-  <div class="navtab" onclick="switchTab('team',this)">👥 Team <span class="soon">Soon</span></div>
-  <div class="navtab" onclick="switchTab('finance',this)">💰 Finance <span class="soon">Soon</span></div>
-  <div class="navtab" onclick="switchTab('marketing',this)">📣 Marketing <span class="soon">Soon</span></div>
-  <div class="navtab" onclick="switchTab('insights',this)">📊 Insights <span class="soon">Soon</span></div>
+  <div class="brand">VantagePoint<span class="brand-sub">3D &amp; Media</span></div>
+  <div class="navtab active" onclick="switchTab('jobs',this)">Jobs</div>
+  <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
+  <div class="navtab" onclick="switchTab('finance',this)">Finance <span class="soon">Soon</span></div>
+  <div class="navtab" onclick="switchTab('marketing',this)">Marketing <span class="soon">Soon</span></div>
+  <div class="navtab" onclick="switchTab('insights',this)">Insights <span class="soon">Soon</span></div>
   <div class="nav-right">
     <span class="apihost-badge" id="hostBadge"></span>
     <button class="btn-sm btn-outline" onclick="doLogout()">Sign out</button>
@@ -199,7 +240,7 @@ tr.cancelled td{opacity:0.4}
 <!-- ── JOBS PAGE ──────────────────────────────────────── -->
 <div id="page-jobs" class="page active">
 
-  <!-- Subheader controls -->
+  <!-- Subheader -->
   <div class="subheader">
     <select class="ctrl" id="period" onchange="onPeriodChange()">
       <option value="thisMonth">This Month</option>
@@ -211,20 +252,23 @@ tr.cancelled td{opacity:0.4}
     </select>
     <div class="custom-range" id="customRange">
       <input type="date" class="ctrl" id="fromDate">
-      <span style="color:#94a3b8;font-size:11px">to</span>
+      <span style="color:var(--slate);font-size:11px">to</span>
       <input type="date" class="ctrl" id="toDate">
     </div>
-    <button class="btn-primary" id="refreshBtn" onclick="doLoad()">↻&nbsp; Refresh</button>
+    <button class="btn-primary" id="refreshBtn" onclick="doLoad()">↻ Refresh</button>
   </div>
 
   <!-- Stats -->
   <div class="stats">
-    <div class="stat"><div class="stat-lbl">Total Shoots</div><div class="stat-val sv-navy" id="sTotal">—</div></div>
+    <div class="stat"><div class="stat-lbl">Total Shoots</div><div class="stat-val sv-denim" id="sTotal">—</div></div>
     <div class="stat"><div class="stat-lbl">On Time</div>    <div class="stat-val sv-green" id="sOnTime">—</div></div>
     <div class="stat"><div class="stat-lbl">Late</div>       <div class="stat-val sv-red"   id="sLate">—</div></div>
     <div class="stat"><div class="stat-lbl">Pending</div>    <div class="stat-val sv-amber" id="sPending">—</div></div>
+    <div class="stat"><div class="stat-lbl">Pre-Shoot Calls</div><div class="stat-val" id="sPreCall">—</div></div>
+    <div class="stat"><div class="stat-lbl">Post-Delivery Calls</div><div class="stat-val" id="sPostCall">—</div></div>
+    <div class="stat"><div class="stat-lbl">Reviews Received</div><div class="stat-val sv-denim" id="sReviews">—</div></div>
     <div class="stat"><div class="stat-lbl">Feedback Logged</div><div class="stat-val" id="sFeedback">—</div></div>
-    <div class="stat"><div class="stat-lbl">Errors Logged</div>  <div class="stat-val sv-red" id="sErrors">—</div></div>
+    <div class="stat"><div class="stat-lbl">Errors Logged</div><div class="stat-val sv-red" id="sErrors">—</div></div>
   </div>
 
   <!-- Table -->
@@ -234,21 +278,24 @@ tr.cancelled td{opacity:0.4}
         <table>
           <thead>
             <tr>
-              <th class="bright" style="width:140px">Shoot Date</th>
-              <th class="bright" style="width:200px">Address</th>
-              <th style="width:160px">Agent</th>
-              <th style="width:140px">Photographer</th>
-              <th style="width:200px">Services</th>
-              <th style="width:72px;text-align:center">Photos</th>
-              <th style="width:72px;text-align:center">Videos</th>
-              <th style="width:135px">Delivered</th>
-              <th style="width:95px">On Time?</th>
-              <th style="width:185px">Client Feedback</th>
-              <th style="width:185px;color:#fca5a5">Errors / Issues</th>
+              <th class="bright" style="width:140px" data-sort="date">Shoot Date</th>
+              <th class="bright" style="width:190px" data-sort="address">Address</th>
+              <th style="width:155px" data-sort="agent">Agent</th>
+              <th style="width:135px" data-sort="photographer">Photographer</th>
+              <th style="width:190px" class="no-sort">Services</th>
+              <th style="width:65px;text-align:center" class="no-sort">Photos</th>
+              <th style="width:65px;text-align:center" class="no-sort">Videos</th>
+              <th style="width:130px" class="no-sort">Delivered</th>
+              <th style="width:90px" data-sort="ontime">On Time?</th>
+              <th style="width:70px;text-align:center" class="no-sort">Pre-Shoot Call</th>
+              <th style="width:80px;text-align:center" class="no-sort">Post-Delivery Call</th>
+              <th style="width:160px" class="no-sort">Review Received</th>
+              <th style="width:175px" class="no-sort">Client Feedback</th>
+              <th style="width:175px;color:#fca5a5" class="no-sort">Errors / Issues</th>
             </tr>
           </thead>
           <tbody id="tbody">
-            <tr><td colspan="11"><div class="center-state"><div class="spinner"></div><br>Sign in to load data</div></td></tr>
+            <tr><td colspan="14"><div class="center-state"><div class="spinner"></div><br>Sign in to load data</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -263,32 +310,16 @@ tr.cancelled td{opacity:0.4}
 
 <!-- ── COMING SOON PAGES ───────────────────────────────── -->
 <div id="page-team" class="page">
-  <div class="soon-page">
-    <div class="soon-icon">👥</div>
-    <div class="soon-title">Team Dashboard</div>
-    <div class="soon-desc">Photographer schedules, utilization, and performance metrics — coming soon.</div>
-  </div>
+  <div class="soon-page"><div class="soon-icon">👥</div><div class="soon-title">Team Dashboard</div><div class="soon-desc">Photographer schedules, utilization, and performance metrics — coming soon.</div></div>
 </div>
 <div id="page-finance" class="page">
-  <div class="soon-page">
-    <div class="soon-icon">💰</div>
-    <div class="soon-title">Finance Overview</div>
-    <div class="soon-desc">Revenue tracking, invoices, and monthly P&L — coming soon.</div>
-  </div>
+  <div class="soon-page"><div class="soon-icon">💰</div><div class="soon-title">Finance Overview</div><div class="soon-desc">Revenue tracking, invoices, and monthly P&L — coming soon.</div></div>
 </div>
 <div id="page-marketing" class="page">
-  <div class="soon-page">
-    <div class="soon-icon">📣</div>
-    <div class="soon-title">Marketing</div>
-    <div class="soon-desc">Campaign performance, lead sources, and booking trends — coming soon.</div>
-  </div>
+  <div class="soon-page"><div class="soon-icon">📣</div><div class="soon-title">Marketing</div><div class="soon-desc">Campaign performance, lead sources, and booking trends — coming soon.</div></div>
 </div>
 <div id="page-insights" class="page">
-  <div class="soon-page">
-    <div class="soon-icon">📊</div>
-    <div class="soon-title">Business Insights</div>
-    <div class="soon-desc">Cross-functional analytics, on-time trends, top agents, and more — coming soon.</div>
-  </div>
+  <div class="soon-page"><div class="soon-icon">📊</div><div class="soon-title">Business Insights</div><div class="soon-desc">Cross-functional analytics, on-time trends, top agents, and more — coming soon.</div></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -306,6 +337,7 @@ const S = {
   pages: 1,
   total: 0,
   busy:  false,
+  sort:  { col: 'date', dir: 'asc' },
 };
 
 // ── UTILS ──────────────────────────────────────────────
@@ -341,9 +373,7 @@ function doLogin(){
   const key  = document.getElementById('lockKey').value.trim();
   if(!host){document.getElementById('lockErr').textContent='Enter the API server URL.';return;}
   if(!key) {document.getElementById('lockErr').textContent='Enter the team password.';return;}
-
   document.getElementById('lockErr').textContent='Connecting…';
-
   fetch(`${host}/health`, {headers:{'X-Api-Key':key}})
     .then(r=>{
       if(r.status===401)throw new Error('Wrong password');
@@ -367,7 +397,6 @@ function doLogout(){
   location.reload();
 }
 
-// Try auto-login from localStorage
 window.addEventListener('DOMContentLoaded',()=>{
   const host = localStorage.getItem('vp3d_host');
   const key  = localStorage.getItem('vp3d_key');
@@ -382,8 +411,25 @@ window.addEventListener('DOMContentLoaded',()=>{
         document.getElementById('hostBadge').textContent=host.replace('https://','');
         doLoad();
       })
-      .catch(()=>{/* show lock screen */});
+      .catch(()=>{});
   }
+
+  // Column sort click handlers
+  document.querySelectorAll('th[data-sort]').forEach(th=>{
+    th.addEventListener('click',()=>{
+      const col=th.dataset.sort;
+      if(S.sort.col===col){
+        S.sort.dir=S.sort.dir==='asc'?'desc':'asc';
+      } else {
+        S.sort.col=col;
+        S.sort.dir='asc';
+      }
+      updateSortHeaders();
+      sortAppts();
+      refreshTable();
+    });
+  });
+  updateSortHeaders();
 });
 
 document.getElementById('lockKey').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
@@ -452,13 +498,74 @@ function svcTag(n){
   return{cls:'',lbl:n.split(/[\s\-]/)[0].slice(0,16)};
 }
 
-// ── EDITABLE CELL ──────────────────────────────────────
+// ── SORTING ────────────────────────────────────────────
+function updateSortHeaders(){
+  document.querySelectorAll('th[data-sort]').forEach(th=>{
+    th.classList.remove('sort-asc','sort-desc');
+    if(th.dataset.sort===S.sort.col){
+      th.classList.add(S.sort.dir==='asc'?'sort-asc':'sort-desc');
+      th.classList.add('bright');
+    }
+  });
+}
+
+function sortAppts(){
+  const{col,dir}=S.sort;
+  const mult=dir==='asc'?1:-1;
+  S.appts.sort((a,b)=>{
+    switch(col){
+      case 'date':
+        return mult*(new Date(a.arrivalWindowStart)-new Date(b.arrivalWindowStart));
+      case 'address':
+        return mult*(a.property?.address||'').localeCompare(b.property?.address||'');
+      case 'agent':
+        return mult*(a.client?.agentName||'').localeCompare(b.client?.agentName||'');
+      case 'photographer':
+        return mult*(a.photographer?.name||'').localeCompare(b.photographer?.name||'');
+      case 'ontime':{
+        const rank={yes:0,no:1,pending:2,loading:3};
+        const ra=rank[calcOnTime(a,S.orders[a.orderId])]??3;
+        const rb=rank[calcOnTime(b,S.orders[b.orderId])]??3;
+        return mult*(ra-rb);
+      }
+      default: return 0;
+    }
+  });
+}
+
+// ── EDITABLE TEXT CELL ─────────────────────────────────
 function ecellHtml(id,key){
   const note=S.notes[id]||{};
   const val=note[key]||'';
   const isE=key==='errors';
-  if(val)return`<div class="ecell${isE?' has-err':''}" data-id="${id}" data-key="${key}"><span class="${isE?'er-txt':'fb-txt'}">${esc(val)}</span></div>`;
-  return`<div class="ecell" data-id="${id}" data-key="${key}"><span class="ph">${isE?'Log an issue…':'Add feedback…'}</span></div>`;
+  const isR=key==='reviewReceived';
+  const cls=isE?' has-err':'';
+  const txtCls=isE?'er-txt':isR?'rv-txt':'fb-txt';
+  const ph=isE?'Log an issue…':isR?'Add review link or note…':'Add feedback…';
+  if(val)return`<div class="ecell${cls}" data-id="${id}" data-key="${key}"><span class="${txtCls}">${esc(val)}</span></div>`;
+  return`<div class="ecell" data-id="${id}" data-key="${key}"><span class="ph">${ph}</span></div>`;
+}
+
+// ── CHECKBOX CELL ──────────────────────────────────────
+function chkHtml(id,key){
+  const note=S.notes[id]||{};
+  const checked=!!note[key];
+  return`<div class="chk-cell"><button class="chk-btn${checked?' checked':''}" data-id="${id}" data-key="${key}" onclick="toggleChk(this)"></button></div>`;
+}
+
+async function toggleChk(btn){
+  const{id,key}=btn.dataset;
+  if(!S.notes[id])S.notes[id]={};
+  const newVal=!S.notes[id][key];
+  S.notes[id][key]=newVal;
+  btn.classList.toggle('checked',newVal);
+  refreshStats();
+  try{
+    await api(`/api/notes/${id}`,{method:'POST',body:JSON.stringify({[key]:newVal})});
+    showToast('Saved ✓');
+  }catch(e){
+    showToast('Save failed — check connection',true);
+  }
 }
 
 // ── API CALLS ──────────────────────────────────────────
@@ -497,6 +604,9 @@ function rowHtml(appt){
   <td style="text-align:center">${viHtml}</td>
   <td>${delHtml}</td>
   <td>${otBadge}</td>
+  <td>${chkHtml(appt.orderId,'preShootCall')}</td>
+  <td>${chkHtml(appt.orderId,'postDeliveryCall')}</td>
+  <td>${ecellHtml(appt.orderId,'reviewReceived')}</td>
   <td>${ecellHtml(appt.orderId,'feedback')}</td>
   <td>${ecellHtml(appt.orderId,'errors')}</td>
 </tr>`;
@@ -504,7 +614,7 @@ function rowHtml(appt){
 
 function refreshTable(){
   const tbody=document.getElementById('tbody');
-  if(!S.appts.length){tbody.innerHTML='<tr><td colspan="11"><div class="center-state">No shoots found for this period.</div></td></tr>';return;}
+  if(!S.appts.length){tbody.innerHTML='<tr><td colspan="14"><div class="center-state">No shoots found for this period.</div></td></tr>';return;}
   tbody.innerHTML=S.appts.map(rowHtml).join('');
   refreshStats();
 }
@@ -517,13 +627,16 @@ function patchRow(id){
 }
 
 function refreshStats(){
-  let on=0,late=0,pend=0,fb=0,er=0;
+  let on=0,late=0,pend=0,fb=0,er=0,pre=0,post=0,rev=0;
   S.appts.forEach(a=>{
     const ot=calcOnTime(a,S.orders[a.orderId]);
     if(ot==='yes')on++;else if(ot==='no')late++;else if(ot==='pending')pend++;
     const n=S.notes[a.orderId]||{};
     if(n.feedback)fb++;
-    if(n.errors)  er++;
+    if(n.errors)er++;
+    if(n.preShootCall)pre++;
+    if(n.postDeliveryCall)post++;
+    if(n.reviewReceived)rev++;
   });
   document.getElementById('sTotal').textContent   =S.total||S.appts.length;
   document.getElementById('sOnTime').textContent  =on;
@@ -531,9 +644,12 @@ function refreshStats(){
   document.getElementById('sPending').textContent =pend;
   document.getElementById('sFeedback').textContent=fb;
   document.getElementById('sErrors').textContent  =er;
+  document.getElementById('sPreCall').textContent =pre;
+  document.getElementById('sPostCall').textContent=post;
+  document.getElementById('sReviews').textContent =rev;
 }
 
-// ── INLINE EDITING (saves to backend) ─────────────────
+// ── INLINE TEXT EDITING ────────────────────────────────
 document.addEventListener('click',e=>{
   const cell=e.target.closest('.ecell');
   if(!cell||cell.querySelector('textarea'))return;
@@ -543,20 +659,22 @@ document.addEventListener('click',e=>{
   cell.classList.add('editing');
   const ta=document.createElement('textarea');
   ta.value=cur;
-  ta.placeholder=key==='errors'?'Describe the issue or mistake…':'Note client feedback here…';
+  const phMap={errors:'Describe the issue or mistake…',reviewReceived:'Paste review link or note…',feedback:'Note client feedback here…'};
+  ta.placeholder=phMap[key]||'';
   cell.appendChild(ta);
   ta.focus();
 
   async function save(){
     const val=ta.value.trim();
-    // Optimistic update
     if(!S.notes[id])S.notes[id]={};
     S.notes[id][key]=val;
     const isE=key==='errors';
+    const isR=key==='reviewReceived';
     cell.className=`ecell${val&&isE?' has-err':''}`;
-    cell.innerHTML=val?`<span class="${isE?'er-txt':'fb-txt'}">${esc(val)}</span>`:`<span class="ph">${isE?'Log an issue…':'Add feedback…'}</span>`;
+    const txtCls=isE?'er-txt':isR?'rv-txt':'fb-txt';
+    const ph=isE?'Log an issue…':isR?'Add review link or note…':'Add feedback…';
+    cell.innerHTML=val?`<span class="${txtCls}">${esc(val)}</span>`:`<span class="ph">${ph}</span>`;
     refreshStats();
-    // Persist to backend
     try{
       await api(`/api/notes/${id}`,{method:'POST',body:JSON.stringify({[key]:val})});
       showToast('Saved ✓');
@@ -573,12 +691,11 @@ async function doLoad(){
   if(S.busy||!S.host)return;
   S.busy=true;
   document.getElementById('refreshBtn').disabled=true;
-  document.getElementById('tbody').innerHTML='<tr><td colspan="11"><div class="center-state"><div class="spinner"></div><br>Loading shoots…</div></td></tr>';
+  document.getElementById('tbody').innerHTML='<tr><td colspan="14"><div class="center-state"><div class="spinner"></div><br>Loading shoots…</div></td></tr>';
   document.getElementById('pager').style.display='none';
 
   const{from,to}=getRange();
   try{
-    // Fetch notes and appointments in parallel
     const[apptData,notesData]=await Promise.all([
       api(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${S.page}&page_size=25`),
       api('/api/notes').catch(()=>{}),
@@ -596,6 +713,7 @@ async function doLoad(){
       document.getElementById('nextBtn').disabled=S.page>=S.pages;
     }
 
+    sortAppts();
     refreshTable();
 
     // Load orders in batches of 4
@@ -608,11 +726,10 @@ async function doLoad(){
     }
     refreshStats();
 
-    // Load media in background
     loadMedia(S.appts.slice());
 
   }catch(e){
-    document.getElementById('tbody').innerHTML=`<tr><td colspan="11"><div class="center-state" style="color:var(--red)">Error: ${esc(e.message)}<br><button class="btn-primary" style="margin-top:12px" onclick="doLoad()">Retry</button></div></td></tr>`;
+    document.getElementById('tbody').innerHTML=`<tr><td colspan="14"><div class="center-state" style="color:var(--red)">Error: ${esc(e.message)}<br><button class="btn-primary" style="margin-top:12px" onclick="doLoad()">Retry</button></div></td></tr>`;
   }
   S.busy=false;
   document.getElementById('refreshBtn').disabled=false;
