@@ -327,17 +327,18 @@ tr.cancelled td{opacity:0.35}
 <script>
 // ── STATE ──────────────────────────────────────────────
 const S = {
-  host:  '',
-  key:   '',
-  appts: [],
-  orders:{},
-  media: {},
-  notes: {},
-  page:  1,
-  pages: 1,
-  total: 0,
-  busy:  false,
-  sort:  { col: 'date', dir: 'asc' },
+  host:        '',
+  key:         '',
+  appts:       [],
+  orders:      {},
+  media:       {},
+  notes:       {},
+  ghlFeedback: {},   // keyed by lowercase email → array of entries (newest-first)
+  page:        1,
+  pages:       1,
+  total:       0,
+  busy:        false,
+  sort:        { col: 'date', dir: 'asc' },
 };
 
 // ── UTILS ──────────────────────────────────────────────
@@ -576,6 +577,72 @@ async function api(path, opts={}){
   return r.json();
 }
 
+
+// ── GHL FEEDBACK MATCHING ──────────────────────────────
+/**
+ * Pick the GHL feedback entry that most likely belongs to this specific
+ * shoot, using date-proximity matching.
+ *
+ * GHL feedback is triggered by Spiro's delivery email — so the feedback
+ * createdAt should be close to the shoot date + estimated delivery window.
+ *
+ * Match priority:
+ *  1. Agent email → entries created within 30 days after shoot (closest to delivery)
+ *  2. Agent name  → same date filter (email not always in Spiro data)
+ *  3. Fallback    → most recent entry for that agent (no date match)
+ */
+function pickGhlFeedback(appt){
+  const email = (appt.client?.agentEmail||'').toLowerCase().trim();
+  const name  = (appt.client?.agentName ||'').toLowerCase().trim();
+  const shootMs = new Date(appt.arrivalWindowStart).getTime();
+  // Estimate delivery ≈ shoot + 2 days; look within ±14 days of that
+  const deliveryMs = shootMs + 2*24*60*60*1000;
+  const windowStart = shootMs;                      // not before shoot
+  const windowEnd   = shootMs + 30*24*60*60*1000;  // max 30 days after
+
+  let entries = null;
+  if(email && S.ghlFeedback[email]){
+    entries = S.ghlFeedback[email];
+  } else {
+    // Name fallback: find first bucket whose entries have a matching name
+    for(const arr of Object.values(S.ghlFeedback)){
+      if(arr[0]?.name?.toLowerCase()===name){ entries=arr; break; }
+    }
+  }
+  if(!entries||!entries.length) return null;
+
+  const inWindow = entries.filter(e=>{
+    const t=new Date(e.createdAt).getTime();
+    return t>=windowStart && t<=windowEnd;
+  });
+
+  if(inWindow.length){
+    // Closest to estimated delivery date
+    inWindow.sort((a,b)=>
+      Math.abs(new Date(a.createdAt)-deliveryMs)-
+      Math.abs(new Date(b.createdAt)-deliveryMs)
+    );
+    return inWindow[0];
+  }
+  // Fallback: most recent (backend sorts newest-first)
+  return entries[0];
+}
+
+function ghlFeedbackCellHtml(appt){
+  const fb = pickGhlFeedback(appt);
+  if(!fb) return \`<td>\${ecellHtml(appt.orderId,'feedback')}</td>\`;  // fall back to manual entry
+
+  const icon = fb.sentiment==='positive' ? '👍'
+             : fb.sentiment==='negative' ? '👎'
+             : fb.sentiment==='no_review'? '<span style="color:var(--slate)">—</span>'
+             :                             '<span class="muted">⏳ Pending</span>';
+  const comment = fb.comments
+    ? `<span class="ghl-comment">${esc(fb.comments)}</span>` : '';
+  const dt = fb.createdAt
+    ? `<span class="ghl-date">${new Date(fb.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
+  return `<td class="ghl-fb-cell"><div class="ghl-fb">${icon}${comment}${dt}</div></td>`;
+}
+
 // ── RENDER ─────────────────────────────────────────────
 function rowHtml(appt){
   const o  =S.orders[appt.orderId];
@@ -608,7 +675,7 @@ function rowHtml(appt){
   <td>${chkHtml(appt.orderId,'preShootCall')}</td>
   <td>${chkHtml(appt.orderId,'postDeliveryCall')}</td>
   <td>${ecellHtml(appt.orderId,'reviewReceived')}</td>
-  <td>${ecellHtml(appt.orderId,'feedback')}</td>
+  ${ghlFeedbackCellHtml(appt)}
   <td>${ecellHtml(appt.orderId,'errors')}</td>
 </tr>`;
 }
@@ -706,14 +773,16 @@ async function doLoad(){
 
   const{from,to}=getRange();
   try{
-    const[apptData,notesData]=await Promise.all([
+    const[apptData,notesData,ghlData]=await Promise.all([
       api(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${S.page}&page_size=25`),
       api('/api/notes').catch(()=>null),
+      api('/api/ghl/feedback').catch(()=>null),
     ]);
 
     S.appts=apptData?.data||[];
     S.total =apptData?.meta?.resultCount||S.appts.length;
     S.pages =apptData?.meta?.totalPages||1;
+    S.ghlFeedback = ghlData||{};
     // Restore from localStorage first, then merge server data on top
     const localNotes=restoreNotesFromLocal();
     const serverNotes=notesData||{};
