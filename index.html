@@ -250,14 +250,15 @@ tr.cancelled td{opacity:0.35}
   <!-- Subheader -->
   <div class="subheader">
     <div class="view-toggle">
-      <button id="btnPast" onclick="setView('past')">Past</button>
-      <button id="btnUpcoming" onclick="setView('upcoming')" class="active">Upcoming</button>
+      <button id="vPast" onclick="setView('past')">Past</button>
+      <button id="vUpcoming" onclick="setView('upcoming')" class="active">Upcoming</button>
+      <button id="vAll" onclick="setView('all')">All</button>
     </div>
     <select class="ctrl" id="period" onchange="onPeriodChange()">
-      <option value="next30">Next 30 Days</option>
-      <option value="next7">Next 7 Days</option>
-      <option value="next60">Next 60 Days</option>
-      <option value="thisWeek">This Week</option>
+      <option value="next30">Upcoming 30 Days</option>
+      <option value="next7">Upcoming 7 Days</option>
+      <option value="next6m">Upcoming 6 Months</option>
+      <option value="allFuture">All Future Shoots</option>
       <option value="custom">Custom Range</option>
     </select>
     <div class="custom-range" id="customRange">
@@ -266,9 +267,9 @@ tr.cancelled td{opacity:0.35}
       <input type="date" class="ctrl" id="toDate">
     </div>
     <div class="view-toggle" id="clientToggle">
-      <button id="btnAll" onclick="setClientFilter('all')" class="active">All</button>
-      <button id="btnResidential" onclick="setClientFilter('residential')">Residential</button>
-      <button id="btnMatterport" onclick="setClientFilter('matterport')">Matterport</button>
+      <button id="cfAll" onclick="setClientFilter('all')" class="active">All</button>
+      <button id="cfResidential" onclick="setClientFilter('residential')">Residential</button>
+      <button id="cfMatterport" onclick="setClientFilter('matterport')">Matterport</button>
     </div>
     <input type="text" class="search-input" id="searchInput" placeholder="Search agent, address…" oninput="onSearch()">
     <div class="sub-spacer"></div>
@@ -356,8 +357,10 @@ const S = {
   total:       0,
   busy:        false,
   sort:        { col: 'date', dir: 'asc' },
-  clientFilter: 'all',
-  search:       '',
+  clientFilter:  'all',
+  search:        '',
+  searchActive:  false,
+  view:          'upcoming',
 };
 
 // ── UTILS ──────────────────────────────────────────────
@@ -486,15 +489,19 @@ function getRange(){
   return{from:f.toISOString().split('.')[0], to:t.toISOString().split('.')[0]};
 }
 function setView(v){
+  S.view=v;
   const sel=document.getElementById('period');
-  document.getElementById('btnPast').classList.toggle('active', v==='past');
-  document.getElementById('btnUpcoming').classList.toggle('active', v==='upcoming');
+  ['vPast','vUpcoming','vAll'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  document.getElementById({past:'vPast',upcoming:'vUpcoming',all:'vAll'}[v])?.classList.add('active');
   if(v==='past'){
-    sel.innerHTML=`<option value="last7">Last 7 Days</option><option value="last30">Last 30 Days</option><option value="last90">Last 90 Days</option><option value="thisMonth">This Month</option><option value="lastMonth">Last Month</option><option value="custom">Custom Range</option>`;
+    sel.innerHTML=`<option value="last7">Past 7 Days</option><option value="last30">Past 30 Days</option><option value="past6m">Past 6 Months</option><option value="pastYear">Past Year</option><option value="allPast">All Past Shoots</option><option value="custom">Custom Range</option>`;
     sel.value='last30';
-  } else {
-    sel.innerHTML=`<option value="next30">Next 30 Days</option><option value="next7">Next 7 Days</option><option value="next60">Next 60 Days</option><option value="thisWeek">This Week</option><option value="custom">Custom Range</option>`;
+  } else if(v==='upcoming'){
+    sel.innerHTML=`<option value="next7">Upcoming 7 Days</option><option value="next30">Upcoming 30 Days</option><option value="next6m">Upcoming 6 Months</option><option value="allFuture">All Future Shoots</option><option value="custom">Custom Range</option>`;
     sel.value='next30';
+  } else {
+    sel.innerHTML=`<option value="allTime">All Shoots</option><option value="custom">Custom Range</option>`;
+    sel.value='allTime';
   }
   onPeriodChange();
   doLoad();
@@ -729,14 +736,22 @@ function filteredAppts(){
 }
 function setClientFilter(f){
   S.clientFilter=f;
-  const map={all:'btnAll',residential:'btnResidential',matterport:'btnMatterport'};
+  const map={all:'cfAll',residential:'cfResidential',matterport:'cfMatterport'};
   Object.values(map).forEach(id=>document.getElementById(id)?.classList.remove('active'));
   document.getElementById(map[f])?.classList.add('active');
   refreshTable();
 }
+let _searchTimer=null;
 function onSearch(){
-  S.search=document.getElementById('searchInput').value.trim().toLowerCase();
-  refreshTable();
+  const q=document.getElementById('searchInput').value.trim().toLowerCase();
+  S.search=q;
+  clearTimeout(_searchTimer);
+  _searchTimer=setTimeout(()=>{
+    const wasActive=S.searchActive;
+    S.searchActive=!!q;
+    if(S.searchActive||wasActive){S.page=1;doLoad();}
+    else{refreshTable();}
+  },300);
 }
 function refreshTable(){
   const tbody=document.getElementById('tbody');
@@ -829,13 +844,19 @@ async function doLoad(){
   if(S.busy||!S.host)return;
   S.busy=true;
   document.getElementById('refreshBtn').disabled=true;
-  document.getElementById('tbody').innerHTML='<tr><td colspan="14"><div class="center-state"><div class="spinner"></div><br>Loading shoots…</div></td></tr>';
+  const _loadMsg=S.searchActive?'Searching all shoots…':'Loading shoots…';
+  document.getElementById('tbody').innerHTML=`<tr><td colspan="14"><div class="center-state"><div class="spinner"></div><br>${_loadMsg}</div></td></tr>`;
   document.getElementById('pager').style.display='none';
 
-  const{from,to}=getRange();
+  let _from,_to,_ps,_pg;
+  if(S.searchActive){
+    _from='2019-01-01T00:00:00';_to='2035-01-01T00:00:00';_ps=500;_pg=1;
+  } else {
+    const _r=getRange();_from=_r.from;_to=_r.to;_ps=100;_pg=S.page;
+  }
   try{
     const[apptData,notesData,ghlData]=await Promise.all([
-      api(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${S.page}&page_size=100`),
+      api(`/api/appointments?from=${encodeURIComponent(_from)}&to=${encodeURIComponent(_to)}&page=${_pg}&page_size=${_ps}`),
       api('/api/notes').catch(()=>null),
       api('/api/ghl/feedback').catch(()=>null),
     ]);
@@ -843,6 +864,7 @@ async function doLoad(){
     S.appts=apptData?.data||[];
     S.total =apptData?.meta?.resultCount||S.appts.length;
     S.pages =apptData?.meta?.totalPages||1;
+    if(S.searchActive)S.pages=1;
     S.ghlFeedback = ghlData||{};
     // Restore from localStorage first, then merge server data on top
     const localNotes=restoreNotesFromLocal();
