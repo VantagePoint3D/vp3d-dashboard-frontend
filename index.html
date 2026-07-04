@@ -905,7 +905,7 @@ async function doLoad(){
     const ids=[...new Set(S.appts.map(a=>a.orderId))];
     for(let i=0;i<ids.length;i+=4){
       await Promise.all(ids.slice(i,i+4).map(async id=>{
-        try{S.orders[id]=await api(`/api/orders/${id}`);}catch{S.orders[id]=null;}
+        try{const _or=await api(`/api/orders/${id}`);S.orders[id]=('data' in _or && 'meta' in _or)?_or.data:_or;}catch{S.orders[id]=null;}
         patchRow(id);
       }));
     }
