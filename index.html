@@ -480,6 +480,12 @@ function getRange(){
   else if(p==='thisMonth'){ f=new Date(now.getFullYear(),now.getMonth(),1); t=new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59); }
   else if(p==='lastMonth'){ f=new Date(now.getFullYear(),now.getMonth()-1,1); t=new Date(now.getFullYear(),now.getMonth(),0,23,59,59); }
   else if(p==='thisWeek'){ f=new Date(now);f.setDate(now.getDate()-now.getDay());f.setHours(0,0,0,0);t=new Date(f);t.setDate(f.getDate()+6);t.setHours(23,59,59); }
+  else if(p==='past6m'){   f=new Date(now);f.setMonth(now.getMonth()-6);f.setHours(0,0,0,0);t=new Date(now);}
+  else if(p==='pastYear'){ f=new Date(now);f.setFullYear(now.getFullYear()-1);f.setHours(0,0,0,0);t=new Date(now);}
+  else if(p==='allPast'){  f=new Date('2025-01-01T00:00:00');t=new Date(now);}
+  else if(p==='next6m'){   f=new Date(now);f.setHours(0,0,0,0);t=new Date(now);t.setMonth(now.getMonth()+6);t.setHours(23,59,59);}
+  else if(p==='allFuture'){f=new Date(now);f.setHours(0,0,0,0);t=new Date(now);t.setDate(now.getDate()+60);t.setHours(23,59,59);}
+  else if(p==='allTime'){  f=new Date('2025-01-01T00:00:00');t=new Date(now);t.setDate(now.getDate()+60);t.setHours(23,59,59);}
   else{
     const fv=document.getElementById('fromDate').value;
     const tv=document.getElementById('toDate').value;
@@ -850,7 +856,10 @@ async function doLoad(){
 
   let _from,_to,_ps,_pg;
   if(S.searchActive){
-    _from='2019-01-01T00:00:00';_to='2035-01-01T00:00:00';_ps=500;_pg=1;
+    // Dynamic range: 4 years back → 1 year forward (avoids API date-range rejections)
+    const _sr=new Date(),_sf=new Date('2025-01-01T00:00:00'),_st=new Date(_sr);
+    _st.setDate(_sr.getDate()+60);_st.setHours(23,59,59);
+    _from=_sf.toISOString().split('.')[0];_to=_st.toISOString().split('.')[0];_ps=500;_pg=1;
   } else {
     const _r=getRange();_from=_r.from;_to=_r.to;_ps=100;_pg=S.page;
   }
