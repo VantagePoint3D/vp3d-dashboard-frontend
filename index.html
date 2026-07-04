@@ -592,23 +592,16 @@ async function api(path, opts={}){
  *  3. Fallback    → most recent entry for that agent (no date match)
  */
 function pickGhlFeedback(appt){
-  const email = (appt.client?.agentEmail||'').toLowerCase().trim();
+  // Spiro appointments only expose agentName (not email), so we key GHL data by name
   const name  = (appt.client?.agentName ||'').toLowerCase().trim();
   const shootMs = new Date(appt.arrivalWindowStart).getTime();
-  // Estimate delivery ≈ shoot + 2 days; look within ±14 days of that
+  // Estimate delivery ≈ shoot + 2 days; look within 30 days of shoot
   const deliveryMs = shootMs + 2*24*60*60*1000;
   const windowStart = shootMs;                      // not before shoot
   const windowEnd   = shootMs + 30*24*60*60*1000;  // max 30 days after
 
-  let entries = null;
-  if(email && S.ghlFeedback[email]){
-    entries = S.ghlFeedback[email];
-  } else {
-    // Name fallback: find first bucket whose entries have a matching name
-    for(const arr of Object.values(S.ghlFeedback)){
-      if(arr[0]?.name?.toLowerCase()===name){ entries=arr; break; }
-    }
-  }
+  if(!name) return null;
+  const entries = S.ghlFeedback[name];
   if(!entries||!entries.length) return null;
 
   const inWindow = entries.filter(e=>{
