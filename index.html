@@ -115,6 +115,10 @@ input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacit
 .view-toggle{display:flex;border:1.5px solid var(--g200);border-radius:3px;overflow:hidden}
 .view-toggle button{background:var(--white);border:none;padding:6px 14px;font-size:11px;font-weight:700;font-family:var(--font-title);letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;color:var(--g500);transition:all 0.15s;white-space:nowrap}
 .view-toggle button.active{background:var(--black);color:var(--cream)}
+.search-input{border:1.5px solid var(--g200);border-radius:3px;padding:5px 10px;font-size:12px;font-family:var(--font-body);background:var(--white);outline:none;width:190px;transition:border-color 0.15s;color:var(--g900)}
+.search-input:focus{border-color:var(--denim)}
+.search-input::placeholder{color:var(--g400)}
+.sub-spacer{flex:1}
 .btn-primary:hover{background:#222}
 .btn-primary:disabled{opacity:0.4;cursor:wait}
 
@@ -261,6 +265,13 @@ tr.cancelled td{opacity:0.35}
       <span style="color:var(--slate);font-size:11px">to</span>
       <input type="date" class="ctrl" id="toDate">
     </div>
+    <div class="view-toggle" id="clientToggle">
+      <button id="btnAll" onclick="setClientFilter('all')" class="active">All</button>
+      <button id="btnResidential" onclick="setClientFilter('residential')">Residential</button>
+      <button id="btnMatterport" onclick="setClientFilter('matterport')">Matterport</button>
+    </div>
+    <input type="text" class="search-input" id="searchInput" placeholder="Search agent, address…" oninput="onSearch()">
+    <div class="sub-spacer"></div>
     <button class="btn-primary" id="refreshBtn" onclick="doLoad()">↻ Refresh</button>
   </div>
 
@@ -345,6 +356,8 @@ const S = {
   total:       0,
   busy:        false,
   sort:        { col: 'date', dir: 'asc' },
+  clientFilter: 'all',
+  search:       '',
 };
 
 // ── UTILS ──────────────────────────────────────────────
@@ -697,11 +710,41 @@ function rowHtml(appt){
 </tr>`;
 }
 
+function filteredAppts(){
+  let list=S.appts;
+  if(S.clientFilter==='matterport'){
+    list=list.filter(a=>(a.client?.agentName||'').toLowerCase().includes('matterport'));
+  } else if(S.clientFilter==='residential'){
+    list=list.filter(a=>!(a.client?.agentName||'').toLowerCase().includes('matterport'));
+  }
+  if(S.search){
+    const q=S.search;
+    list=list.filter(a=>(a.client?.agentName||'').toLowerCase().includes(q)||
+      (a.client?.companyName||'').toLowerCase().includes(q)||
+      (a.property?.address||'').toLowerCase().includes(q)||
+      (a.orderId||'').toLowerCase().includes(q)||
+      (a.photographer?.name||'').toLowerCase().includes(q));
+  }
+  return list;
+}
+function setClientFilter(f){
+  S.clientFilter=f;
+  const map={all:'btnAll',residential:'btnResidential',matterport:'btnMatterport'};
+  Object.values(map).forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(map[f])?.classList.add('active');
+  refreshTable();
+}
+function onSearch(){
+  S.search=document.getElementById('searchInput').value.trim().toLowerCase();
+  refreshTable();
+}
 function refreshTable(){
   const tbody=document.getElementById('tbody');
+  const vis=filteredAppts();
   if(!S.appts.length){tbody.innerHTML='<tr><td colspan="14"><div class="center-state">No shoots found for this period.</div></td></tr>';return;}
-  tbody.innerHTML=S.appts.map(rowHtml).join('');
-  refreshStats();
+  if(!vis.length){tbody.innerHTML='<tr><td colspan="14"><div class="center-state">No results match your filter.</div></td></tr>';refreshStats(vis);return;}
+  tbody.innerHTML=vis.map(rowHtml).join('');
+  refreshStats(vis);
 }
 
 function patchRow(id){
@@ -711,9 +754,10 @@ function patchRow(id){
   if(appt)tr.outerHTML=rowHtml(appt);
 }
 
-function refreshStats(){
+function refreshStats(appts){
+  appts=appts||S.appts;
   let on=0,late=0,pend=0,fb=0,er=0,pre=0,post=0,rev=0;
-  S.appts.forEach(a=>{
+  appts.forEach(a=>{
     const ot=calcOnTime(a,S.orders[a.orderId]);
     if(ot==='yes')on++;else if(ot==='no')late++;else if(ot==='pending')pend++;
     const n=S.notes[a.orderId]||{};
@@ -723,7 +767,7 @@ function refreshStats(){
     if(n.postDeliveryCall)post++;
     if(n.reviewReceived)rev++;
   });
-  document.getElementById('sTotal').textContent   =S.total||S.appts.length;
+  document.getElementById('sTotal').textContent   =appts.length+(appts.length<S.appts.length?` / ${S.total||S.appts.length}`:'');
   document.getElementById('sOnTime').textContent  =on;
   document.getElementById('sLate').textContent    =late;
   document.getElementById('sPending').textContent =pend;
@@ -791,7 +835,7 @@ async function doLoad(){
   const{from,to}=getRange();
   try{
     const[apptData,notesData,ghlData]=await Promise.all([
-      api(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${S.page}&page_size=25`),
+      api(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page=${S.page}&page_size=100`),
       api('/api/notes').catch(()=>null),
       api('/api/ghl/feedback').catch(()=>null),
     ]);
