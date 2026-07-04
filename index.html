@@ -112,6 +112,9 @@ html,body{height:100%;font-family:var(--font-body);background:var(--bg);color:va
 .custom-range.show{display:flex}
 input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacity:0.5}
 .btn-primary{background:var(--black);color:var(--cream);border:none;border-radius:3px;padding:7px 16px;font-size:11px;font-weight:700;font-family:var(--font-title);letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:background 0.15s;white-space:nowrap}
+.view-toggle{display:flex;border:1.5px solid var(--g200);border-radius:3px;overflow:hidden}
+.view-toggle button{background:var(--white);border:none;padding:6px 14px;font-size:11px;font-weight:700;font-family:var(--font-title);letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;color:var(--g500);transition:all 0.15s;white-space:nowrap}
+.view-toggle button.active{background:var(--black);color:var(--cream)}
 .btn-primary:hover{background:#222}
 .btn-primary:disabled{opacity:0.4;cursor:wait}
 
@@ -242,12 +245,15 @@ tr.cancelled td{opacity:0.35}
 
   <!-- Subheader -->
   <div class="subheader">
+    <div class="view-toggle">
+      <button id="btnPast" onclick="setView('past')">Past</button>
+      <button id="btnUpcoming" onclick="setView('upcoming')" class="active">Upcoming</button>
+    </div>
     <select class="ctrl" id="period" onchange="onPeriodChange()">
-      <option value="thisMonth">This Month</option>
-      <option value="lastMonth">Last Month</option>
+      <option value="next30">Next 30 Days</option>
+      <option value="next7">Next 7 Days</option>
+      <option value="next60">Next 60 Days</option>
       <option value="thisWeek">This Week</option>
-      <option value="last7">Last 7 Days</option>
-      <option value="last30">Last 30 Days</option>
       <option value="custom">Custom Range</option>
     </select>
     <div class="custom-range" id="customRange">
@@ -449,11 +455,15 @@ function getRange(){
   const p=document.getElementById('period').value;
   const now=new Date();
   let f,t;
-  if(p==='thisMonth'){ f=new Date(now.getFullYear(),now.getMonth(),1); t=new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59); }
+  if(p==='next7'){  f=new Date(now); f.setHours(0,0,0,0); t=new Date(now); t.setDate(now.getDate()+7);  t.setHours(23,59,59); }
+  else if(p==='next30'){ f=new Date(now); f.setHours(0,0,0,0); t=new Date(now); t.setDate(now.getDate()+30); t.setHours(23,59,59); }
+  else if(p==='next60'){ f=new Date(now); f.setHours(0,0,0,0); t=new Date(now); t.setDate(now.getDate()+60); t.setHours(23,59,59); }
+  else if(p==='last7'){  f=new Date(now); f.setDate(now.getDate()-7);  f.setHours(0,0,0,0); t=new Date(now); }
+  else if(p==='last30'){ f=new Date(now); f.setDate(now.getDate()-30); f.setHours(0,0,0,0); t=new Date(now); }
+  else if(p==='last90'){ f=new Date(now); f.setDate(now.getDate()-90); f.setHours(0,0,0,0); t=new Date(now); }
+  else if(p==='thisMonth'){ f=new Date(now.getFullYear(),now.getMonth(),1); t=new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59); }
   else if(p==='lastMonth'){ f=new Date(now.getFullYear(),now.getMonth()-1,1); t=new Date(now.getFullYear(),now.getMonth(),0,23,59,59); }
   else if(p==='thisWeek'){ f=new Date(now);f.setDate(now.getDate()-now.getDay());f.setHours(0,0,0,0);t=new Date(f);t.setDate(f.getDate()+6);t.setHours(23,59,59); }
-  else if(p==='last7'){ f=new Date(now);f.setDate(now.getDate()-7);f.setHours(0,0,0,0);t=new Date(now); }
-  else if(p==='last30'){ f=new Date(now);f.setDate(now.getDate()-30);f.setHours(0,0,0,0);t=new Date(now); }
   else{
     const fv=document.getElementById('fromDate').value;
     const tv=document.getElementById('toDate').value;
@@ -461,6 +471,20 @@ function getRange(){
     t=tv?new Date(tv+'T23:59:59'):new Date(now);
   }
   return{from:f.toISOString().split('.')[0], to:t.toISOString().split('.')[0]};
+}
+function setView(v){
+  const sel=document.getElementById('period');
+  document.getElementById('btnPast').classList.toggle('active', v==='past');
+  document.getElementById('btnUpcoming').classList.toggle('active', v==='upcoming');
+  if(v==='past'){
+    sel.innerHTML=`<option value="last7">Last 7 Days</option><option value="last30">Last 30 Days</option><option value="last90">Last 90 Days</option><option value="thisMonth">This Month</option><option value="lastMonth">Last Month</option><option value="custom">Custom Range</option>`;
+    sel.value='last30';
+  } else {
+    sel.innerHTML=`<option value="next30">Next 30 Days</option><option value="next7">Next 7 Days</option><option value="next60">Next 60 Days</option><option value="thisWeek">This Week</option><option value="custom">Custom Range</option>`;
+    sel.value='next30';
+  }
+  onPeriodChange();
+  doLoad();
 }
 function onPeriodChange(){
   document.getElementById('customRange').classList.toggle('show', document.getElementById('period').value==='custom');
