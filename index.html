@@ -184,6 +184,7 @@ tr.cancelled td{opacity:0.35}
 .ecell.has-err{background:#fff5f5}
 .ecell textarea{width:100%;min-height:52px;border:none;background:transparent;font-family:var(--font-body);font-size:11px;color:var(--g900);resize:vertical;outline:none;line-height:1.5}
 .ph    {color:var(--g300);font-style:italic;font-size:11px}
+.price-val{font-family:var(--font-title);font-size:13px;font-weight:700;color:var(--g800,#1a1a18)}
 .fb-txt{color:var(--g700);font-size:11px;line-height:1.4}
 .er-txt{color:var(--red); font-size:11px;line-height:1.4}
 .rv-txt{color:var(--denim2);font-size:11px;line-height:1.4}
@@ -301,6 +302,7 @@ tr.cancelled td{opacity:0.35}
               <th style="width:155px" data-sort="agent">Agent</th>
               <th style="width:135px" data-sort="photographer">Photographer</th>
               <th style="width:190px" class="no-sort">Services</th>
+              <th style="width:100px;text-align:right" class="no-sort">Shoot Value</th>
               <th style="width:65px;text-align:center" class="no-sort">Photos</th>
               <th style="width:65px;text-align:center" class="no-sort">Videos</th>
               <th style="width:130px" class="no-sort">Delivered</th>
@@ -313,7 +315,7 @@ tr.cancelled td{opacity:0.35}
             </tr>
           </thead>
           <tbody id="tbody">
-            <tr><td colspan="14"><div class="center-state"><div class="spinner"></div><br>Sign in to load data</div></td></tr>
+            <tr><td colspan="15"><div class="center-state"><div class="spinner"></div><br>Sign in to load data</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -691,7 +693,9 @@ function rowHtml(appt){
   const o  =S.orders[appt.orderId];
   const m  =S.media[appt.orderId];
   const ot =calcOnTime(appt,o);
-  const svcs=[...new Set((o?.bundle?.includedServices||[]).map(s=>s.name?.trim()).filter(Boolean))];
+  const _bundleSvcs=(o?.bundle?.includedServices||[]).map(s=>s.name?.trim()).filter(Boolean);
+  const _addOnSvcs=(o?.addOns||[]).map(s=>s.name?.trim()).filter(Boolean);
+  const svcs=[...new Set([..._bundleSvcs,..._addOnSvcs])];
   const del=fmtDelivered(o?.website?.deliveredAt);
   const addr=appt.property?.address||'';
   const street=addr.split(',')[0]?.trim()||addr;
@@ -701,6 +705,8 @@ function rowHtml(appt){
   const stMap={Completed:'b-green',Confirmed:'b-blue',Scheduled:'b-blue',Cancelled:'b-red',Rescheduled:'b-amber',InProgress:'b-purple',Pending:'b-gray'};
   const stBadge=appt.status?`<span class="badge ${stMap[appt.status]||'b-gray'}">${appt.status}</span>`:'';
   const svcHtml=svcs.length?svcs.map(n=>{const{cls,lbl}=svcTag(n);return`<span class="stag ${cls}">${esc(lbl)}</span>`;}).join(''):o?'<span class="ph">—</span>':'<span class="muted">…</span>';
+  const rawPrice=o?.pricing?.totalSalePrice;
+  const priceHtml=rawPrice!=null?`<span class="price-val">$${Number(rawPrice).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</span>`:o?'<span class="ph">—</span>':'<span class="muted">…</span>';
   const phHtml=m===undefined?'<span class="muted">…</span>':`<span class="num-big">${m.photos??'—'}</span>`;
   const viHtml=m===undefined?'<span class="muted">…</span>':`<span class="num-big">${m.videos??'—'}</span>`;
   const delHtml=del?`<span class="del-txt">${esc(del)}</span>`:o?'<span class="ph">Not yet</span>':'<span class="muted">…</span>';
@@ -711,6 +717,7 @@ function rowHtml(appt){
   <td style="font-weight:500">${esc(appt.client?.agentName||'—')}</td>
   <td>${esc(appt.photographer?.name||'—')}</td>
   <td><div class="stags">${svcHtml}</div></td>
+  <td style="text-align:right;padding-right:12px;font-weight:600;color:var(--g700)">${priceHtml}</td>
   <td style="text-align:center">${phHtml}</td>
   <td style="text-align:center">${viHtml}</td>
   <td>${delHtml}</td>
@@ -762,8 +769,8 @@ function onSearch(){
 function refreshTable(){
   const tbody=document.getElementById('tbody');
   const vis=filteredAppts();
-  if(!S.appts.length){tbody.innerHTML='<tr><td colspan="14"><div class="center-state">No shoots found for this period.</div></td></tr>';return;}
-  if(!vis.length){tbody.innerHTML='<tr><td colspan="14"><div class="center-state">No results match your filter.</div></td></tr>';refreshStats(vis);return;}
+  if(!S.appts.length){tbody.innerHTML='<tr><td colspan="15"><div class="center-state">No shoots found for this period.</div></td></tr>';return;}
+  if(!vis.length){tbody.innerHTML='<tr><td colspan="15"><div class="center-state">No results match your filter.</div></td></tr>';refreshStats(vis);return;}
   tbody.innerHTML=vis.map(rowHtml).join('');
   refreshStats(vis);
 }
@@ -851,7 +858,7 @@ async function doLoad(){
   S.busy=true;
   document.getElementById('refreshBtn').disabled=true;
   const _loadMsg=S.searchActive?'Searching all shoots…':'Loading shoots…';
-  document.getElementById('tbody').innerHTML=`<tr><td colspan="14"><div class="center-state"><div class="spinner"></div><br>${_loadMsg}</div></td></tr>`;
+  document.getElementById('tbody').innerHTML=`<tr><td colspan="15"><div class="center-state"><div class="spinner"></div><br>${_loadMsg}</div></td></tr>`;
   document.getElementById('pager').style.display='none';
 
   let _from,_to,_ps,_pg;
@@ -907,7 +914,7 @@ async function doLoad(){
     loadMedia(S.appts.slice());
 
   }catch(e){
-    document.getElementById('tbody').innerHTML=`<tr><td colspan="14"><div class="center-state" style="color:var(--red)">Error: ${esc(e.message)}<br><button class="btn-primary" style="margin-top:12px" onclick="doLoad()">Retry</button></div></td></tr>`;
+    document.getElementById('tbody').innerHTML=`<tr><td colspan="15"><div class="center-state" style="color:var(--red)">Error: ${esc(e.message)}<br><button class="btn-primary" style="margin-top:12px" onclick="doLoad()">Retry</button></div></td></tr>`;
   }
   S.busy=false;
   document.getElementById('refreshBtn').disabled=false;
