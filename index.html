@@ -251,7 +251,7 @@ tr.cancelled td{opacity:0.35}
   <div class="navtab active" onclick="switchTab('jobs',this)">Jobs</div>
   <div class="navtab" onclick="switchTab('sales',this)">Sales</div>
   <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
-  <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance <span class="soon">Soon</span></div>
+  <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance</div>
   <div class="navtab" onclick="switchTab('marketing',this)">Marketing <span class="soon">Soon</span></div>
   <div class="navtab" onclick="switchTab('insights',this)">Insights</div>
   <div class="nav-right">
@@ -367,7 +367,22 @@ tr.cancelled td{opacity:0.35}
   <div class="soon-page"><div class="soon-icon">👥</div><div class="soon-title">Team Dashboard</div><div class="soon-desc">Photographer schedules, utilization, and performance metrics — coming soon.</div></div>
 </div>
 <div id="page-finance" class="page">
-  <div class="soon-page"><div class="soon-icon">💰</div><div class="soon-title">Finance Overview</div><div class="soon-desc">Revenue tracking, invoices, and monthly P&L — coming soon.</div></div>
+  <div class="ins-head">
+    <span class="ins-title">Finance</span>
+    <select id="finMonths" class="ins-sel" onchange="loadFinance(true)">
+      <option value="3">Last 3 months</option>
+      <option value="6" selected>Last 6 months</option>
+      <option value="12">Last 12 months</option>
+    </select>
+    <span class="ins-note" id="finNote"></span>
+    <button class="btn-sm btn-outline" id="qboConnectBtn" style="display:none" onclick="connectQbo()">Connect QuickBooks</button>
+  </div>
+  <div class="stats" id="finKpis"></div>
+  <div class="ins-grid">
+    <div class="ins-card wide"><div class="ins-card-title">Income, Expenses &amp; Net Profit by Month</div><canvas id="chPnl"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Expense Categories</div><canvas id="chExpCats"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Accounts Receivable Aging</div><canvas id="chAging"></canvas></div>
+  </div>
 </div>
 <div id="page-marketing" class="page">
   <div class="soon-page"><div class="soon-icon">📣</div><div class="soon-title">Marketing</div><div class="soon-desc">Campaign performance, lead sources, and booking trends — coming soon.</div></div>
@@ -537,6 +552,7 @@ function switchTab(id, el){
   document.getElementById('page-'+id).classList.add('active');
   if(id==='insights' && !S.insightsLoaded) loadInsights();
   if(id==='sales' && !S.salesLoaded) loadSales();
+  if(id==='finance' && !S.financeLoaded) loadFinance();
 }
 
 // ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
@@ -670,6 +686,78 @@ function renderFunnel(){
     options:{ indexAxis:'y', responsive:true, plugins:{legend:{display:false},
       tooltip:{callbacks:{afterLabel:(ctx)=>'Value: $'+(p.stages[ctx.dataIndex].value||0).toLocaleString()}}},
       scales:{x:{beginAtZero:true}} }
+  });
+}
+
+// ── FINANCE / QUICKBOOKS (Phase 4) ─────────────────────
+let finCharts = {};
+
+async function connectQbo(){
+  try{
+    const d = await api('/api/qbo/connect');
+    window.open(d.authorizeUrl, '_blank');
+    document.getElementById('finNote').textContent = 'Approve access in the QuickBooks tab, then reload this page.';
+  }catch(e){
+    document.getElementById('finNote').textContent = 'Cannot start connection: '+e.message;
+  }
+}
+
+async function loadFinance(force){
+  S.financeLoaded = true;
+  const months = document.getElementById('finMonths').value;
+  const note = document.getElementById('finNote');
+  const btn = document.getElementById('qboConnectBtn');
+  note.textContent = 'Loading…';
+  let d;
+  try{
+    d = await api(`/api/reports/finance?months=${months}`);
+  }catch(e){
+    try{
+      const st = await api('/api/qbo/status');
+      if(!st.configured){
+        note.textContent = 'QuickBooks app keys are not set on the server yet (QBO_CLIENT_ID / QBO_CLIENT_SECRET).';
+      }else if(!st.connected){
+        note.textContent = 'QuickBooks is not connected yet.';
+        btn.style.display = '';
+      }else{
+        note.textContent = 'Failed to load financials: '+e.message;
+      }
+    }catch(e2){
+      note.textContent = 'Failed to load financials: '+e.message;
+    }
+    return;
+  }
+  btn.style.display = 'none';
+  note.textContent = '';
+  const k = d.kpis;
+  document.getElementById('finKpis').innerHTML = [
+    ['Income', fmtMoney(k.income)],
+    ['Expenses', fmtMoney(k.expenses)],
+    ['Net Profit', fmtMoney(k.netProfit)],
+    ['Margin', fmtPct(k.margin)],
+    ['A/R Outstanding', fmtMoney(k.arOutstanding)],
+  ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+
+  Object.values(finCharts).forEach(c=>c.destroy());
+  finCharts = {};
+  finCharts.pnl = new Chart(document.getElementById('chPnl'), {
+    data:{ labels:d.pnl.months, datasets:[
+      {type:'bar', label:'Income', data:d.pnl.income, backgroundColor:'#7B93A3'},
+      {type:'bar', label:'Expenses', data:d.pnl.expenses, backgroundColor:'#c9c4a9'},
+      {type:'line', label:'Net Profit', data:d.pnl.net, borderColor:'#637d90', backgroundColor:'#637d90', tension:0.3},
+    ]},
+    options:{ responsive:true, scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}} }
+  });
+  finCharts.cats = new Chart(document.getElementById('chExpCats'), {
+    type:'doughnut',
+    data:{ labels:d.pnl.expenseCategories.map(c=>c.name),
+           datasets:[{data:d.pnl.expenseCategories.map(c=>c.total), backgroundColor:INS_COLORS}] },
+    options:{ responsive:true, plugins:{legend:{position:'right', labels:{boxWidth:12, font:{size:10}}}} }
+  });
+  finCharts.aging = new Chart(document.getElementById('chAging'), {
+    type:'bar',
+    data:{ labels:d.arAging.map(b=>b.bucket), datasets:[{label:'Outstanding', data:d.arAging.map(b=>b.amount), backgroundColor:'#9E9D8D'}] },
+    options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{callback:v=>'$'+v.toLocaleString()}}} }
   });
 }
 
