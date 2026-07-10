@@ -249,6 +249,7 @@ tr.cancelled td{opacity:0.35}
 <nav class="topnav">
   <div class="brand">VantagePoint<span class="brand-sub">3D &amp; Media</span></div>
   <div class="navtab active" onclick="switchTab('jobs',this)">Jobs</div>
+  <div class="navtab" onclick="switchTab('sales',this)">Sales</div>
   <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
   <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance <span class="soon">Soon</span></div>
   <div class="navtab" onclick="switchTab('marketing',this)">Marketing <span class="soon">Soon</span></div>
@@ -343,6 +344,25 @@ tr.cancelled td{opacity:0.35}
 </div>
 
 <!-- ── COMING SOON PAGES ───────────────────────────────── -->
+<div id="page-sales" class="page">
+  <div class="ins-head">
+    <span class="ins-title">Sales Pipeline</span>
+    <select id="salesDays" class="ins-sel" onchange="loadSales(true)">
+      <option value="30">Last 30 days</option>
+      <option value="90" selected>Last 90 days</option>
+      <option value="180">Last 180 days</option>
+    </select>
+    <select id="salesPipeline" class="ins-sel" onchange="renderFunnel()"></select>
+    <span class="ins-note" id="salesNote"></span>
+  </div>
+  <div class="stats" id="salesKpis"></div>
+  <div class="ins-grid">
+    <div class="ins-card"><div class="ins-card-title">New Opportunities per Week</div><canvas id="chWeeklyNew"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Lead Sources</div><canvas id="chSources"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Open Funnel by Stage</div><canvas id="chFunnel"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">New Opportunities by Pipeline</div><canvas id="chByPipeline"></canvas></div>
+  </div>
+</div>
 <div id="page-team" class="page">
   <div class="soon-page"><div class="soon-icon">👥</div><div class="soon-title">Team Dashboard</div><div class="soon-desc">Photographer schedules, utilization, and performance metrics — coming soon.</div></div>
 </div>
@@ -516,6 +536,7 @@ function switchTab(id, el){
   el.classList.add('active');
   document.getElementById('page-'+id).classList.add('active');
   if(id==='insights' && !S.insightsLoaded) loadInsights();
+  if(id==='sales' && !S.salesLoaded) loadSales();
 }
 
 // ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
@@ -577,6 +598,78 @@ async function loadInsights(force){
     type:'bar',
     data:{ labels:stLbls, datasets:[{label:'Shoots', data:stLbls.map(s=>d.statuses[s]), backgroundColor:INS_COLORS}] },
     options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+  });
+}
+
+// ── SALES PIPELINE (Phase 2) ───────────────────────────
+let salesData = null;
+let salesCharts = {};
+
+async function loadSales(force){
+  S.salesLoaded = true;
+  const days = document.getElementById('salesDays').value;
+  document.getElementById('salesNote').textContent = 'Loading…';
+  try{
+    salesData = await api(`/api/reports/pipeline?days=${days}`);
+  }catch(e){
+    document.getElementById('salesNote').textContent = 'Failed to load pipeline: '+e.message;
+    return;
+  }
+  const d = salesData, k = d.kpis;
+  document.getElementById('salesKpis').innerHTML = [
+    ['New Opportunities', k.newOpportunities ?? '—'],
+    ['Won', k.won ?? '—'],
+    ['Win Rate', fmtPct(k.winRate)],
+    ['Won Value', fmtMoney(k.wonValue)],
+    ['Open Opps', k.openCount ?? '—'],
+    ['Open Value', fmtMoney(k.openValue)],
+  ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+  const notes = [];
+  if(d.notes.windowTruncated) notes.push('window data truncated at fetch cap');
+  if(d.notes.openTruncated) notes.push('open snapshot truncated at fetch cap');
+  document.getElementById('salesNote').textContent = notes.length ? 'Note: '+notes.join('; ') : '';
+
+  // pipeline selector for the funnel chart
+  const sel = document.getElementById('salesPipeline');
+  const prev = sel.value;
+  sel.innerHTML = d.openPipelines.map(p=>`<option value="${p.id}">${p.name} (${p.count})</option>`).join('');
+  if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+
+  Object.values(salesCharts).forEach(c=>c.destroy());
+  salesCharts = {};
+  salesCharts.weekly = new Chart(document.getElementById('chWeeklyNew'), {
+    type:'bar',
+    data:{ labels:d.weeklyNew.map(w=>w.week), datasets:[{label:'New opportunities', data:d.weeklyNew.map(w=>w.count), backgroundColor:'#7B93A3'}] },
+    options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+  });
+  salesCharts.sources = new Chart(document.getElementById('chSources'), {
+    type:'doughnut',
+    data:{ labels:d.sources.map(s=>s.name), datasets:[{data:d.sources.map(s=>s.count), backgroundColor:INS_COLORS}] },
+    options:{ responsive:true, plugins:{legend:{position:'right', labels:{boxWidth:12, font:{size:10}}}} }
+  });
+  salesCharts.byPipeline = new Chart(document.getElementById('chByPipeline'), {
+    type:'bar',
+    data:{ labels:d.byPipeline.map(p=>p.name), datasets:[
+      {label:'New', data:d.byPipeline.map(p=>p.new), backgroundColor:'#7B93A3'},
+      {label:'Won', data:d.byPipeline.map(p=>p.won), backgroundColor:'#9E9D8D'},
+    ]},
+    options:{ indexAxis:'y', responsive:true, scales:{x:{beginAtZero:true}} }
+  });
+  renderFunnel();
+}
+
+function renderFunnel(){
+  if(!salesData) return;
+  const pid = document.getElementById('salesPipeline').value;
+  const p = salesData.openPipelines.find(x=>x.id===pid) || salesData.openPipelines[0];
+  if(salesCharts.funnel) salesCharts.funnel.destroy();
+  if(!p) return;
+  salesCharts.funnel = new Chart(document.getElementById('chFunnel'), {
+    type:'bar',
+    data:{ labels:p.stages.map(s=>s.name), datasets:[{label:'Open opportunities', data:p.stages.map(s=>s.count), backgroundColor:'#637d90'}] },
+    options:{ indexAxis:'y', responsive:true, plugins:{legend:{display:false},
+      tooltip:{callbacks:{afterLabel:(ctx)=>'Value: $'+(p.stages[ctx.dataIndex].value||0).toLocaleString()}}},
+      scales:{x:{beginAtZero:true}} }
   });
 }
 
