@@ -211,7 +211,19 @@ tr.cancelled td{opacity:0.35}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--black);color:var(--cream);padding:10px 18px;border-radius:3px;font-size:12px;font-weight:500;font-family:var(--font-body);z-index:9000;opacity:0;transform:translateY(8px);transition:all 0.2s;pointer-events:none}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.err{background:var(--red)}
+
+.ins-head{display:flex;align-items:center;gap:14px;padding:18px 24px 4px}
+.ins-title{font-family:var(--font-title);font-weight:900;font-size:18px}
+.ins-sel{font-family:var(--font-body);font-size:12px;padding:5px 8px;border:1px solid var(--sand);border-radius:3px;background:var(--white)}
+.ins-note{font-size:11px;color:var(--slate)}
+.ins-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:10px 24px 30px}
+.ins-card{background:var(--white);border:1px solid var(--sand);border-radius:3px;padding:16px;min-height:260px}
+.ins-card.wide{grid-column:1 / -1}
+.ins-card-title{font-family:var(--font-body);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--slate);margin-bottom:10px}
+.ins-card canvas{max-height:280px}
+@media(max-width:900px){.ins-grid{grid-template-columns:1fr}}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -240,7 +252,7 @@ tr.cancelled td{opacity:0.35}
   <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
   <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance <span class="soon">Soon</span></div>
   <div class="navtab" onclick="switchTab('marketing',this)">Marketing <span class="soon">Soon</span></div>
-  <div class="navtab" onclick="switchTab('insights',this)">Insights <span class="soon">Soon</span></div>
+  <div class="navtab" onclick="switchTab('insights',this)">Insights</div>
   <div class="nav-right">
     <span class="apihost-badge" id="hostBadge"></span>
     <button class="btn-sm btn-outline" onclick="doLogout()">Sign out</button>
@@ -341,7 +353,22 @@ tr.cancelled td{opacity:0.35}
   <div class="soon-page"><div class="soon-icon">📣</div><div class="soon-title">Marketing</div><div class="soon-desc">Campaign performance, lead sources, and booking trends — coming soon.</div></div>
 </div>
 <div id="page-insights" class="page">
-  <div class="soon-page"><div class="soon-icon">📊</div><div class="soon-title">Business Insights</div><div class="soon-desc">Cross-functional analytics, on-time trends, top agents, and more — coming soon.</div></div>
+  <div class="ins-head">
+    <span class="ins-title">Operations Insights</span>
+    <select id="insMonths" class="ins-sel" onchange="loadInsights(true)">
+      <option value="3">Last 3 months</option>
+      <option value="6" selected>Last 6 months</option>
+      <option value="12">Last 12 months</option>
+    </select>
+    <span class="ins-note" id="insNote"></span>
+  </div>
+  <div class="stats" id="insKpis"></div>
+  <div class="ins-grid">
+    <div class="ins-card wide"><div class="ins-card-title">Orders &amp; Revenue by Month</div><canvas id="chMonthly"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Service Mix</div><canvas id="chServices"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Photographer Workload</div><canvas id="chPhotogs"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Shoot Status Breakdown</div><canvas id="chStatuses"></canvas></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -486,6 +513,69 @@ function switchTab(id, el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('page-'+id).classList.add('active');
+  if(id==='insights' && !S.insightsLoaded) loadInsights();
+}
+
+// ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
+const INS_COLORS = ['#7B93A3','#9E9D8D','#A9AEA9','#637d90','#c9c4a9','#8a9bab','#b5b3a4','#5f7382'];
+let insCharts = {};
+
+function fmtMoney(n){ return n==null ? '—' : '$'+Number(n).toLocaleString('en-US',{maximumFractionDigits:0}); }
+function fmtPct(n){ return n==null ? '—' : (n*100).toFixed(1)+'%'; }
+
+async function loadInsights(force){
+  S.insightsLoaded = true;
+  const months = document.getElementById('insMonths').value;
+  document.getElementById('insNote').textContent = 'Loading…';
+  let d;
+  try{
+    d = await api(`/api/reports/operations?months=${months}`);
+  }catch(e){
+    document.getElementById('insNote').textContent = 'Failed to load report: '+e.message;
+    return;
+  }
+  const k = d.kpis;
+  document.getElementById('insKpis').innerHTML = [
+    ['Orders', k.totalOrders ?? '—'],
+    ['Revenue', fmtMoney(k.totalRevenue)],
+    ['Avg Order Value', fmtMoney(k.avgOrderValue)],
+    ['Shoots', k.totalShoots ?? '—'],
+    ['Rush Rate', fmtPct(k.rushRate)],
+    ['Reshoot Rate', fmtPct(k.reshootRate)],
+  ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+  document.getElementById('insNote').textContent =
+    d.sources.reportingRows ? '' : 'Order revenue unavailable from Spiro reporting; showing shoot data only.';
+
+  Object.values(insCharts).forEach(c=>c.destroy());
+  insCharts = {};
+  const months_lbls = d.monthly.map(m=>m.month);
+  insCharts.monthly = new Chart(document.getElementById('chMonthly'), {
+    data:{ labels: months_lbls, datasets:[
+      {type:'bar', label:'Orders', data:d.monthly.map(m=>m.orders), backgroundColor:'#7B93A3', yAxisID:'y'},
+      {type:'bar', label:'Shoots', data:d.monthly.map(m=>m.shoots), backgroundColor:'#c9c4a9', yAxisID:'y'},
+      {type:'line', label:'Revenue', data:d.monthly.map(m=>m.revenue), borderColor:'#637d90', backgroundColor:'#637d90', yAxisID:'y1', tension:0.3},
+    ]},
+    options:{ responsive:true, scales:{ y:{beginAtZero:true, position:'left'}, y1:{beginAtZero:true, position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>'$'+v.toLocaleString()}} } }
+  });
+  insCharts.services = new Chart(document.getElementById('chServices'), {
+    type:'doughnut',
+    data:{ labels:d.services.map(s=>s.name), datasets:[{data:d.services.map(s=>s.count), backgroundColor:INS_COLORS}] },
+    options:{ responsive:true, plugins:{legend:{position:'right', labels:{boxWidth:12, font:{size:10}}}} }
+  });
+  insCharts.photogs = new Chart(document.getElementById('chPhotogs'), {
+    type:'bar',
+    data:{ labels:d.photographers.map(p=>p.name), datasets:[
+      {label:'Shoot hours', data:d.photographers.map(p=>p.shootHours), backgroundColor:'#7B93A3'},
+      {label:'Drive hours', data:d.photographers.map(p=>p.driveHours), backgroundColor:'#A9AEA9'},
+    ]},
+    options:{ indexAxis:'y', responsive:true, scales:{x:{stacked:true, beginAtZero:true}, y:{stacked:true}} }
+  });
+  const stLbls = Object.keys(d.statuses);
+  insCharts.statuses = new Chart(document.getElementById('chStatuses'), {
+    type:'bar',
+    data:{ labels:stLbls, datasets:[{label:'Shoots', data:stLbls.map(s=>d.statuses[s]), backgroundColor:INS_COLORS}] },
+    options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+  });
 }
 
 // ── DATE RANGE ─────────────────────────────────────────
