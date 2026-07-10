@@ -400,6 +400,8 @@ const S = {
 // ── UTILS ──────────────────────────────────────────────
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+function apptArrival(appt){ return appt.arrivalWindowStart || (appt.events && appt.events.arrivalWindowStart) || null; }
+
 function fmtDate(s){
   if(!s)return'—';
   try{return new Date(s).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'America/New_York'});}catch{return s;}
@@ -633,7 +635,7 @@ function calcOnTime(appt,order){
   if(!order)return'loading';
   const ds=order?.website?.deliveredAt;
   if(!ds||ds.startsWith('0001'))return'pending';
-  const shoot=new Date(appt.arrivalWindowStart);
+  const shoot=new Date(apptArrival(appt));
   const delivered=new Date(ds);
   const svcs=order?.bundle?.includedServices||[];
   const hasFilm=svcs.some(s=>s.name&&/film|video/i.test(s.name));
@@ -678,7 +680,7 @@ function sortAppts(){
   S.appts.sort((a,b)=>{
     switch(col){
       case 'date':
-        return mult*(new Date(a.arrivalWindowStart)-new Date(b.arrivalWindowStart));
+        return mult*(new Date(apptArrival(a))-new Date(apptArrival(b)));
       case 'address':
         return mult*(a.property?.address||'').localeCompare(b.property?.address||'');
       case 'agent':
@@ -756,7 +758,7 @@ async function api(path, opts={}){
 function pickGhlFeedback(appt){
   // Spiro appointments only expose agentName (not email), so we key GHL data by name
   const name  = (appt.client?.agentName ||'').toLowerCase().trim();
-  const shootMs = new Date(appt.arrivalWindowStart).getTime();
+  const shootMs = new Date(apptArrival(appt)).getTime();
   // Estimate delivery ≈ shoot + 2 days; look within 30 days of shoot
   const deliveryMs = shootMs + 2*24*60*60*1000;
   const windowStart = shootMs;                      // not before shoot
@@ -822,7 +824,7 @@ function rowHtml(appt){
   const delHtml=del?`<span class="del-txt">${esc(del)}</span>`:o?'<span class="ph">Not yet</span>':'<span class="muted">…</span>';
 
   return`<tr data-order="${appt.orderId}" class="${appt.status==='Cancelled'?'cancelled':''}">
-  <td><div class="date-main">${fmtDate(appt.arrivalWindowStart)}</div><div class="date-sub">${fmtTime(appt.arrivalWindowStart)}</div><div style="margin-top:5px">${stBadge}</div></td>
+  <td><div class="date-main">${fmtDate(apptArrival(appt))}</div><div class="date-sub">${fmtTime(apptArrival(appt))}</div><div style="margin-top:5px">${stBadge}</div></td>
   <td><div class="addr-main">${esc(street)}</div><div class="addr-sub">${esc(city)}</div></td>
   <td style="font-weight:500">${esc(appt.client?.agentName||'—')}</td>
   <td>${esc(appt.photographer?.name||'—')}</td>
