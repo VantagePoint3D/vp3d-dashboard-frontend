@@ -223,8 +223,10 @@ tr.cancelled td{opacity:0.35}
     <div id="lockStep1">
       <div class="lock-label">API Server URL</div>
       <input class="lock-input" id="lockHost" type="url" placeholder="https://dashboard.vantagepointmarketingmedia.com" autocomplete="off">
-      <div class="lock-label" style="margin-top:14px">Team Password</div>
-      <input class="lock-input" id="lockKey" type="password" placeholder="Enter team password" autocomplete="current-password">
+      <div class="lock-label" style="margin-top:14px">Email</div>
+      <input class="lock-input" id="lockEmail" type="email" placeholder="you@vantagepoint3d.com" autocomplete="username">
+      <div class="lock-label" style="margin-top:14px">Password</div>
+      <input class="lock-input" id="lockKey" type="password" placeholder="Enter your password" autocomplete="current-password">
       <button class="lock-btn" onclick="doLogin()">Sign In</button>
       <div class="lock-err" id="lockErr"></div>
     </div>
@@ -236,7 +238,7 @@ tr.cancelled td{opacity:0.35}
   <div class="brand">VantagePoint<span class="brand-sub">3D &amp; Media</span></div>
   <div class="navtab active" onclick="switchTab('jobs',this)">Jobs</div>
   <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
-  <div class="navtab" onclick="switchTab('finance',this)">Finance <span class="soon">Soon</span></div>
+  <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance <span class="soon">Soon</span></div>
   <div class="navtab" onclick="switchTab('marketing',this)">Marketing <span class="soon">Soon</span></div>
   <div class="navtab" onclick="switchTab('insights',this)">Insights <span class="soon">Soon</span></div>
   <div class="nav-right">
@@ -349,6 +351,9 @@ tr.cancelled td{opacity:0.35}
 const S = {
   host:        '',
   key:         '',
+  token:       '',
+  role:        '',
+  email:       '',
   appts:       [],
   orders:      {},
   media:       {},
@@ -393,50 +398,65 @@ function showToast(msg, isErr=false){
 }
 
 // ── AUTH / LOGIN ───────────────────────────────────────
+const ROLE_RANK = {manager:1, owner:2};
+function roleAtLeast(min){ return (ROLE_RANK[S.role]||0) >= (ROLE_RANK[min]||99); }
+
+function applyRoleGates(){
+  document.querySelectorAll('[data-min-role]').forEach(el=>{
+    el.style.display = roleAtLeast(el.dataset.minRole) ? '' : 'none';
+  });
+  document.getElementById('hostBadge').textContent = S.email ? `${S.email} · ${S.role}` : '';
+}
+
+function enterApp(){
+  document.getElementById('lock').classList.add('hidden');
+  applyRoleGates();
+  doLoad();
+}
+
 function doLogin(){
-  const host = document.getElementById('lockHost').value.trim().replace(/\/$/,'');
-  const key  = document.getElementById('lockKey').value.trim();
+  const host  = document.getElementById('lockHost').value.trim().replace(/\/$/,'');
+  const email = document.getElementById('lockEmail').value.trim();
+  const pw    = document.getElementById('lockKey').value;
   if(!host){document.getElementById('lockErr').textContent='Enter the API server URL.';return;}
-  if(!key) {document.getElementById('lockErr').textContent='Enter the team password.';return;}
-  document.getElementById('lockErr').textContent='Connecting…';
-  fetch(`${host}/health`, {headers:{'X-Api-Key':key}})
+  if(!email||!pw){document.getElementById('lockErr').textContent='Enter your email and password.';return;}
+  document.getElementById('lockErr').textContent='Signing in…';
+  fetch(`${host}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})})
     .then(r=>{
-      if(r.status===401)throw new Error('Wrong password');
+      if(r.status===401)throw new Error('Invalid email or password');
+      if(r.status===429)throw new Error('Too many attempts. Wait 15 minutes.');
       if(!r.ok)throw new Error(`Server error ${r.status}`);
       return r.json();
     })
-    .then(()=>{
-      S.host=host; S.key=key;
-      localStorage.setItem('vp3d_host', host);
-      localStorage.setItem('vp3d_key',  key);
-      document.getElementById('lock').classList.add('hidden');
-      document.getElementById('hostBadge').textContent=host.replace('https://','');
-      doLoad();
+    .then(d=>{
+      S.host=host; S.token=d.token; S.role=d.role; S.email=d.email;
+      localStorage.setItem('vp3d_host',  host);
+      localStorage.setItem('vp3d_token', d.token);
+      localStorage.setItem('vp3d_role',  d.role);
+      localStorage.setItem('vp3d_email', d.email);
+      localStorage.removeItem('vp3d_key');
+      enterApp();
     })
     .catch(e=>{document.getElementById('lockErr').textContent=e.message;});
 }
 
 function doLogout(){
-  localStorage.removeItem('vp3d_host');
-  localStorage.removeItem('vp3d_key');
+  ['vp3d_host','vp3d_key','vp3d_token','vp3d_role','vp3d_email'].forEach(k=>localStorage.removeItem(k));
   location.reload();
 }
 
 window.addEventListener('DOMContentLoaded',()=>{
-  const host = localStorage.getItem('vp3d_host');
-  const key  = localStorage.getItem('vp3d_key');
-  if(host && key){
-    S.host=host; S.key=key;
-    document.getElementById('lockHost').value=host;
-    document.getElementById('lockKey').value=key;
-    fetch(`${host}/health`,{headers:{'X-Api-Key':key}})
+  const host  = localStorage.getItem('vp3d_host');
+  const token = localStorage.getItem('vp3d_token');
+  if(host) document.getElementById('lockHost').value = host;
+  if(host && token){
+    S.host=host; S.token=token;
+    S.role  = localStorage.getItem('vp3d_role')  || '';
+    S.email = localStorage.getItem('vp3d_email') || '';
+    fetch(`${host}/api/me`,{headers:{'Authorization':'Bearer '+token}})
       .then(r=>{if(!r.ok)throw 0;return r.json();})
-      .then(()=>{
-        document.getElementById('lock').classList.add('hidden');
-        document.getElementById('hostBadge').textContent=host.replace('https://','');
-        doLoad();
-      })
-      .catch(()=>{});
+      .then(d=>{ S.role=d.role; S.email=d.email; enterApp(); })
+      .catch(()=>{ doLogout(); });
   }
 
   // Column sort click handlers
@@ -624,7 +644,7 @@ async function toggleChk(btn){
 
 // ── API CALLS ──────────────────────────────────────────
 async function api(path, opts={}){
-  const r=await fetch(S.host+path,{...opts,headers:{'X-Api-Key':S.key,'Content-Type':'application/json',...(opts.headers||{})}});
+  const r=await fetch(S.host+path,{...opts,headers:{'Authorization':'Bearer '+S.token,'Content-Type':'application/json',...(opts.headers||{})}});
   if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
