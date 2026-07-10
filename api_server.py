@@ -9,14 +9,19 @@ Deploy:       Railway (see Procfile)
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
 import httpx
 from cachetools import TTLCache
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -57,7 +62,7 @@ SHEET_COLS = ["orderId", "feedback", "errors", "preShootCall", "postDeliveryCall
 app = FastAPI(
     title="VantagePoint 3D — Job Tracker API",
     description="Proxy for Spiro data, Google Sheets notes, and GHL feedback",
-    version="2.1.0",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -76,10 +81,106 @@ ghl_feedback_cache = TTLCache(maxsize=1,   ttl=900)    # 15 min
 
 
 # ── AUTH ──────────────────────────────────────────────────
+# Role-based auth (Phase 0). Users live in the DASHBOARD_USERS env var as a
+# JSON array: [{"email": "...", "password_hash": "pbkdf2$...", "role": "owner"}]
+# Tokens are HMAC-signed (stdlib only, no new dependencies).
+# Legacy X-Api-Key is still accepted at manager level during the transition.
+
+AUTH_SECRET = os.getenv("AUTH_SECRET", "")
+SESSION_HOURS = int(os.getenv("SESSION_HOURS", "72"))
+ROLE_RANK = {"manager": 1, "owner": 2}
+
+def _load_users() -> list[dict]:
+    raw = os.getenv("DASHBOARD_USERS", "")
+    if not raw:
+        return []
+    try:
+        users = json.loads(raw)
+        return [u for u in users if u.get("email") and u.get("password_hash") and u.get("role") in ROLE_RANK]
+    except Exception as e:
+        print(f"[auth] DASHBOARD_USERS parse error: {e}")
+        return []
+
+def _verify_password(password: str, stored: str) -> bool:
+    # format: pbkdf2$<iterations>$<salt_b64>$<hash_b64>
+    try:
+        scheme, iters, salt_b64, hash_b64 = stored.split("$")
+        if scheme != "pbkdf2":
+            return False
+        salt = base64.b64decode(salt_b64)
+        expected = base64.b64decode(hash_b64)
+        derived = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, int(iters))
+        return hmac.compare_digest(derived, expected)
+    except Exception:
+        return False
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+def _b64url_decode(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+def make_token(email: str, role: str) -> str:
+    payload = json.dumps({
+        "sub": email,
+        "role": role,
+        "exp": int(time.time()) + SESSION_HOURS * 3600,
+    }).encode()
+    sig = hmac.new(AUTH_SECRET.encode(), payload, hashlib.sha256).digest()
+    return f"{_b64url(payload)}.{_b64url(sig)}"
+
+def read_token(token: str) -> Optional[dict]:
+    if not AUTH_SECRET:
+        return None
+    try:
+        payload_b64, sig_b64 = token.split(".")
+        payload = _b64url_decode(payload_b64)
+        expected = hmac.new(AUTH_SECRET.encode(), payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(expected, _b64url_decode(sig_b64)):
+            return None
+        claims = json.loads(payload)
+        if claims.get("exp", 0) < time.time():
+            return None
+        return claims
+    except Exception:
+        return None
+
+login_failures = TTLCache(maxsize=1000, ttl=900)  # 15 min lockout window
+
+def require_role(min_role: str):
+    """Dependency factory: allow a valid session token at or above min_role.
+    Legacy X-Api-Key is accepted at manager level (transition only)."""
+    min_rank = ROLE_RANK[min_role]
+
+    def checker(
+        authorization: Optional[str] = Header(None),
+        x_api_key: Optional[str] = Header(None),
+    ) -> dict:
+        if authorization and authorization.startswith("Bearer "):
+            claims = read_token(authorization[7:])
+            if claims and ROLE_RANK.get(claims.get("role"), 0) >= min_rank:
+                return claims
+            raise HTTPException(status_code=401, detail="Session invalid or insufficient role")
+        # legacy shared key = manager level
+        if DASHBOARD_API_KEY and x_api_key == DASHBOARD_API_KEY and min_rank <= ROLE_RANK["manager"]:
+            return {"sub": "legacy-key", "role": "manager"}
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    return checker
+
+RequireManager = require_role("manager")
+RequireOwner = require_role("owner")
+
+# kept for backward reference; all endpoints now use require_role
 def require_key(x_api_key: Optional[str] = Header(None)):
     if DASHBOARD_API_KEY and x_api_key != DASHBOARD_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return x_api_key
+
+
+class LoginPayload(BaseModel):
+    email: str
+    password: str
 
 
 # ── SPIRO HTTP CLIENT ─────────────────────────────────────
@@ -164,6 +265,32 @@ def health():
     }
 
 
+# ── AUTH ENDPOINTS ────────────────────────────────────────
+@app.post("/api/login", tags=["System"])
+def login(payload: LoginPayload, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    if login_failures.get(ip, 0) >= 10:
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again in 15 minutes.")
+    if not AUTH_SECRET:
+        raise HTTPException(status_code=503, detail="AUTH_SECRET not configured")
+    email = payload.email.strip().lower()
+    for user in _load_users():
+        if user["email"].strip().lower() == email and _verify_password(payload.password, user["password_hash"]):
+            return {
+                "token": make_token(email, user["role"]),
+                "email": email,
+                "role": user["role"],
+                "expiresInHours": SESSION_HOURS,
+            }
+    login_failures[ip] = login_failures.get(ip, 0) + 1
+    raise HTTPException(status_code=401, detail="Invalid email or password")
+
+
+@app.get("/api/me", tags=["System"])
+def me(claims: dict = Depends(RequireManager)):
+    return {"email": claims.get("sub"), "role": claims.get("role")}
+
+
 # ── APPOINTMENTS ──────────────────────────────────────────
 @app.get("/api/appointments", tags=["Spiro"])
 async def get_appointments(
@@ -171,7 +298,7 @@ async def get_appointments(
     to_date:   Optional[str] = Query(None, alias="to"),
     page:      int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=500),
-    _: str = Depends(require_key),
+    _: str = Depends(RequireManager),
 ):
     cache_key = f"appts|{from_date}|{to_date}|{page}|{page_size}"
     if cache_key in appt_cache:
@@ -190,7 +317,7 @@ async def get_appointments(
 
 # ── ORDER ─────────────────────────────────────────────────
 @app.get("/api/orders/{order_id}", tags=["Spiro"])
-async def get_order(order_id: str, _: str = Depends(require_key)):
+async def get_order(order_id: str, _: str = Depends(RequireManager)):
     if order_id in order_cache:
         return order_cache[order_id]
     data = await spiro(f"/orders/{order_id}")
@@ -203,7 +330,7 @@ async def get_order(order_id: str, _: str = Depends(require_key)):
 
 # ── MEDIA COUNTS ──────────────────────────────────────────
 @app.get("/api/media/{order_id}", tags=["Spiro"])
-async def get_media(order_id: str, _: str = Depends(require_key)):
+async def get_media(order_id: str, _: str = Depends(RequireManager)):
     if order_id in media_cache:
         return media_cache[order_id]
 
@@ -234,7 +361,7 @@ class NotePayload(BaseModel):
 
 
 @app.get("/api/notes", tags=["Notes"])
-def get_all_notes(_: str = Depends(require_key)):
+def get_all_notes(_: str = Depends(RequireManager)):
     sheet = get_sheet()
     if not sheet:
         return {}
@@ -250,7 +377,7 @@ def get_all_notes(_: str = Depends(require_key)):
 
 
 @app.post("/api/notes/{order_id}", tags=["Notes"])
-def upsert_note(order_id: str, payload: NotePayload, _: str = Depends(require_key)):
+def upsert_note(order_id: str, payload: NotePayload, _: str = Depends(RequireManager)):
     sheet = get_sheet()
     if not sheet:
         raise HTTPException(
@@ -299,7 +426,7 @@ def upsert_note(order_id: str, payload: NotePayload, _: str = Depends(require_ke
 
 # ── GHL FEEDBACK ──────────────────────────────────────────
 @app.get("/api/ghl/feedback", tags=["GHL"])
-async def get_ghl_feedback(_: str = Depends(require_key)):
+async def get_ghl_feedback(_: str = Depends(RequireManager)):
     """
     Returns feedback from GHL's 'Feedback and Reviews' pipeline.
 
@@ -439,7 +566,7 @@ async def get_ghl_feedback(_: str = Depends(require_key)):
 
 # ── CACHE CLEAR ───────────────────────────────────────────
 @app.post("/api/cache/clear", tags=["System"])
-def clear_cache(_: str = Depends(require_key)):
+def clear_cache(_: str = Depends(RequireManager)):
     appt_cache.clear()
     order_cache.clear()
     media_cache.clear()
