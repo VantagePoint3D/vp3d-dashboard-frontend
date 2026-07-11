@@ -216,6 +216,13 @@ tr.cancelled td{opacity:0.35}
 .ins-title{font-family:var(--font-title);font-weight:900;font-size:18px}
 .ins-sel{font-family:var(--font-body);font-size:12px;padding:5px 8px;border:1px solid var(--sand);border-radius:3px;background:var(--white)}
 .ins-note{font-size:11px;color:var(--slate)}
+.mkt-warn{margin:8px 24px;padding:10px 14px;border-left:3px solid #C08A3E;background:#FBF3E6;font-size:12px;color:#6B4E22;line-height:1.5}
+.mkt-warn b{color:#4A3616}
+.mkt-table-wrap{margin:0 24px 20px;overflow-x:auto}
+.mkt-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--white);border:1px solid var(--sand)}
+.mkt-table th{text-align:left;padding:8px 12px;background:var(--black);color:var(--cream);font-family:var(--font-title);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap}
+.mkt-table td{padding:8px 12px;border-top:1px solid var(--sand);white-space:nowrap}
+.mkt-table td.muted{color:var(--slate);font-style:italic}
 .ins-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:10px 24px 30px}
 .ins-card{background:var(--white);border:1px solid var(--sand);border-radius:3px;padding:16px;min-height:260px}
 .ins-card.wide{grid-column:1 / -1}
@@ -252,7 +259,7 @@ tr.cancelled td{opacity:0.35}
   <div class="navtab" onclick="switchTab('sales',this)">Sales</div>
   <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
   <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance</div>
-  <div class="navtab" onclick="switchTab('marketing',this)">Marketing <span class="soon">Soon</span></div>
+  <div class="navtab" onclick="switchTab('marketing',this)">Marketing</div>
   <div class="navtab" onclick="switchTab('insights',this)">Insights</div>
   <div class="nav-right">
     <span class="apihost-badge" id="hostBadge"></span>
@@ -385,7 +392,28 @@ tr.cancelled td{opacity:0.35}
   </div>
 </div>
 <div id="page-marketing" class="page">
-  <div class="soon-page"><div class="soon-icon">📣</div><div class="soon-title">Marketing</div><div class="soon-desc">Campaign performance, lead sources, and booking trends — coming soon.</div></div>
+  <div class="ins-head">
+    <span class="ins-title">Marketing</span>
+    <select id="mktMonths" class="ins-sel" onchange="loadMarketing(true)">
+      <option value="6">Last 6 months</option>
+      <option value="12" selected>Last 12 months</option>
+      <option value="24">Last 24 months</option>
+    </select>
+    <span class="ins-note" id="mktNote"></span>
+  </div>
+  <div class="stats" id="mktKpis"></div>
+  <div id="mktWarn" class="mkt-warn" style="display:none"></div>
+  <div class="ins-grid">
+    <div class="ins-card wide"><div class="ins-card-title">New Clients vs Marketing Spend by Month</div><canvas id="chMktMonthly"></canvas></div>
+    <div class="ins-card wide"><div class="ins-card-title">Cost to Acquire a Client (CAC) by Month</div><canvas id="chMktCac"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Clients by Channel</div><canvas id="chMktChannel"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Revenue by Channel</div><canvas id="chMktChannelRev"></canvas></div>
+    <div class="ins-card wide"><div class="ins-card-title">Client Lifetime Value by Acquisition Cohort</div><canvas id="chMktCohort"></canvas></div>
+  </div>
+  <div class="ins-head"><span class="ins-title" style="font-size:14px">Channel Detail</span></div>
+  <div class="mkt-table-wrap"><table class="mkt-table" id="mktChannelTable"></table></div>
+  <div class="ins-head"><span class="ins-title" style="font-size:14px">Instagram / DM Outreach</span></div>
+  <div class="mkt-table-wrap"><table class="mkt-table" id="mktOutreachTable"></table></div>
 </div>
 <div id="page-insights" class="page">
   <div class="ins-head">
@@ -411,6 +439,7 @@ tr.cancelled td{opacity:0.35}
 <script>
 // ── STATE ──────────────────────────────────────────────
 const S = {
+  marketingLoaded: false,
   host:        '',
   key:         '',
   token:       '',
@@ -553,6 +582,7 @@ function switchTab(id, el){
   if(id==='insights' && !S.insightsLoaded) loadInsights();
   if(id==='sales' && !S.salesLoaded) loadSales();
   if(id==='finance' && !S.financeLoaded) loadFinance();
+  if(id==='marketing' && !S.marketingLoaded) loadMarketing();
 }
 
 // ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
@@ -1233,6 +1263,138 @@ function changePage(dir){
   if(np<1||np>S.pages)return;
   S.page=np; S.orders={}; S.media={};
   doLoad();
+}
+
+// ── MARKETING / CLIENT ACQUISITION (Phase 3) ────────────
+let mktCharts = {};
+
+async function loadMarketing(force){
+  S.marketingLoaded = true;
+  const months = document.getElementById('mktMonths').value;
+  const note = document.getElementById('mktNote');
+  const warn = document.getElementById('mktWarn');
+  note.textContent = 'Loading…';
+  warn.style.display = 'none';
+  let d;
+  try{
+    d = await api(`/api/reports/marketing?months=${months}`);
+  }catch(e){
+    note.textContent = 'Could not load marketing data: ' + e.message;
+    return;
+  }
+  note.textContent = '';
+  const k = d.kpis, n = d.notes;
+
+  // KPI cards. CAC/LTV show an em dash (not $0) when we genuinely don't know.
+  document.getElementById('mktKpis').innerHTML = [
+    ['New Clients', k.newClients],
+    ['Marketing Spend', fmtMoney(k.totalSpend)],
+    ['CAC (blended)', k.blendedCac==null ? '—' : fmtMoney(k.blendedCac)],
+    ['LTV (mature)', k.ltvMature==null ? '—' : fmtMoney(k.ltvMature)],
+    ['LTV : CAC', k.ltvCacRatio==null ? '—' : k.ltvCacRatio.toFixed(2)+':1'],
+    ['Avg 1st Order', fmtMoney(k.avgFirstOrder)],
+    ['Repeat Rate', fmtPct(k.repeatRate)],
+    ['Discounts Given', fmtMoney(k.discountTotal)],
+  ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+
+  // Honesty banner: say out loud what the numbers do and don't cover.
+  const bits = [];
+  if(n.monthsMissingSpend && n.monthsMissingSpend.length){
+    bits.push(`<b>${n.monthsMissingSpend.length} month(s) have no spend recorded</b> (${n.monthsMissingSpend.join(', ')}). They are excluded from CAC rather than counted as $0 — otherwise CAC would look better than it is. Fill the <i>Marketing Spend</i> tab to include them.`);
+  }
+  if(n.unattributed){
+    bits.push(`<b>${n.unattributed} client(s) have no source recorded</b> and sit in "Unattributed" — they are shown, not dropped, so the channel splits below don't overstate the attributed channels.`);
+  }
+  if(k.ltvMature!=null){
+    bits.push(`LTV uses only <b>mature cohorts</b> (acquired ${n.matureCohortMonths}+ months ago, ${n.matureClients} clients). Recent clients are excluded because they haven't had time to spend yet.`);
+  }
+  bits.push(`CAC method: <b>${n.cacMethod}</b>.`);
+  warn.innerHTML = bits.join('<br>');
+  warn.style.display = '';
+
+  Object.values(mktCharts).forEach(c=>c.destroy());
+  mktCharts = {};
+
+  // New clients vs spend
+  mktCharts.monthly = new Chart(document.getElementById('chMktMonthly'), {
+    data:{ labels:d.monthly.map(m=>m.month), datasets:[
+      {type:'bar', label:'New Clients', data:d.monthly.map(m=>m.newClients), backgroundColor:INS_COLORS[0], yAxisID:'y'},
+      {type:'line', label:'Marketing Spend', data:d.monthly.map(m=>m.spend), borderColor:INS_COLORS[3], backgroundColor:'transparent', tension:0.3, yAxisID:'y1'},
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ position:'left', title:{display:true,text:'Clients'} },
+               y1:{ position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Spend ($)'} } } }
+  });
+
+  // CAC by month — gaps stay gaps
+  mktCharts.cac = new Chart(document.getElementById('chMktCac'), {
+    type:'line',
+    data:{ labels:d.monthly.map(m=>m.month), datasets:[
+      {label:'CAC', data:d.monthly.map(m=>m.cac), borderColor:INS_COLORS[1], backgroundColor:'transparent', tension:0.3, spanGaps:false},
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ tooltip:{ callbacks:{ label:c=> c.parsed.y==null ? 'No spend recorded' : 'CAC: '+fmtMoney(c.parsed.y) } } },
+      scales:{ y:{ title:{display:true,text:'$ per client'} } } }
+  });
+
+  const ch = d.byChannel;
+  mktCharts.channel = new Chart(document.getElementById('chMktChannel'), {
+    type:'doughnut',
+    data:{ labels:ch.map(c=>c.channel), datasets:[{ data:ch.map(c=>c.clients), backgroundColor:INS_COLORS }] },
+    options:{ responsive:true, maintainAspectRatio:false }
+  });
+  mktCharts.channelRev = new Chart(document.getElementById('chMktChannelRev'), {
+    type:'bar',
+    data:{ labels:ch.map(c=>c.channel), datasets:[{ label:'Revenue', data:ch.map(c=>c.revenue), backgroundColor:INS_COLORS[2] }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} }
+  });
+
+  // Cohort LTV — immature cohorts drawn faded so they aren't read as decline
+  const co = d.cohortLtv;
+  mktCharts.cohort = new Chart(document.getElementById('chMktCohort'), {
+    type:'bar',
+    data:{ labels:co.map(c=>c.cohort), datasets:[{
+      label:'Avg LTV per client',
+      data:co.map(c=>c.avgLtv),
+      backgroundColor:co.map(c=> c.mature ? INS_COLORS[0] : 'rgba(150,150,150,0.35)'),
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{ afterLabel:c=>{
+          const row = co[c.dataIndex];
+          return row.mature ? `${row.clients} clients · mature` : `${row.clients} clients · too new to judge`;
+        } } } },
+      scales:{ y:{ title:{display:true,text:'$ per client'} } } }
+  });
+
+  // Channel table
+  document.getElementById('mktChannelTable').innerHTML =
+    '<tr><th>Channel</th><th>Clients</th><th>Revenue</th><th>Avg 1st Order</th><th>Won</th><th>Lost</th><th>Win Rate</th><th>CAC</th></tr>' +
+    ch.map(c=>`<tr>
+      <td>${c.channel}</td>
+      <td>${c.clients}</td>
+      <td>${fmtMoney(c.revenue)}</td>
+      <td>${fmtMoney(c.avgFirstOrder)}</td>
+      <td>${c.won}</td>
+      <td>${c.lost}</td>
+      <td>${c.winRate==null?'—':fmtPct(c.winRate)}</td>
+      <td class="${c.cac==null?'muted':''}">${c.cac==null? c.cacNote : fmtMoney(c.cac)}</td>
+    </tr>`).join('');
+
+  // Outreach table
+  const o = d.outreach;
+  const ot = document.getElementById('mktOutreachTable');
+  if(!o || !o.available){
+    ot.innerHTML = '<tr><td class="muted">Outreach data unavailable.</td></tr>';
+  }else{
+    ot.innerHTML =
+      '<tr><th>Pipeline</th><th>Contacts</th><th>DMs Sent</th><th>Responded</th><th>No Response</th></tr>' +
+      o.byPipeline.map(p=>`<tr>
+        <td>${p.name}</td><td>${p.contacts}</td><td>${p.dmSent}</td><td>${p.responded}</td><td>${p.noResponse}</td>
+      </tr>`).join('') +
+      `<tr><td><b>Total</b></td><td><b>${o.contacts}</b></td><td><b>${o.dmSent}</b></td><td><b>${o.responded}</b></td><td><b>${o.noResponse}</b></td></tr>` +
+      `<tr><td colspan="5" class="muted">Response rate: ${o.responseRate==null?'—':fmtPct(o.responseRate)}${o.costPerDm!=null?' · Cost per DM sent: '+fmtMoney(o.costPerDm):''}</td></tr>`;
+  }
 }
 </script>
 </body>
