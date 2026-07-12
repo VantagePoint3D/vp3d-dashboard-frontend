@@ -1431,7 +1431,7 @@ async function loadMarketing(force){
     let rows =
       '<tr><th>Pipeline</th><th>Contacts</th><th>Leads</th><th>Warming</th><th>DM Sent</th><th>DM Follow-up</th><th>Responded</th><th>No Response</th></tr>' +
       o.byPipeline.map(p=>`<tr>
-        <td>${p.name}${p.truncated?` <span class="muted">(showing ${p.contacts} of ${p.totalInGhl||'?'})</span>`:''}</td>
+        <td>${p.name}</td>
         <td>${p.contacts}</td><td>${p.leads}</td><td>${p.warming}</td>
         <td>${p.dm_sent}</td><td>${p.dm_followup}</td>
         <td class="${p.responded?'':'muted'}">${p.responded}</td>
@@ -1444,7 +1444,7 @@ async function loadMarketing(force){
       rows += `<tr><td colspan="8" class="muted">Response rate: ${fmtPct(o.responseRate)}</td></tr>`;
     }
     if(o.costPerDm!=null){
-      rows += `<tr><td colspan="8" class="muted">Cost per DM sent: ${fmtMoney(o.costPerDm)} (IG outreach labor / DMs sent)</td></tr>`;
+      rows += `<tr><td colspan="8" class="muted">Cost per DM sent: $${o.costPerDm.toFixed(2)} (IG outreach labor / DMs sent)</td></tr>`;
     }
     ot.innerHTML = rows;
   }
