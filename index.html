@@ -414,6 +414,31 @@ tr.cancelled td{opacity:0.35}
   <div class="mkt-table-wrap"><table class="mkt-table" id="mktChannelTable"></table></div>
   <div class="ins-head"><span class="ins-title" style="font-size:14px">Instagram / DM Outreach</span></div>
   <div class="mkt-table-wrap"><table class="mkt-table" id="mktOutreachTable"></table></div>
+
+  <!-- ── CLIENT RETENTION (cohort, censoring-aware) ────────── -->
+  <div class="ins-head">
+    <span class="ins-title">Client Retention</span>
+    <select id="retWindow" class="ins-sel" onchange="loadRetention(true)">
+      <option value="90">90-day window</option>
+      <option value="180" selected>180-day window</option>
+      <option value="270">270-day window</option>
+      <option value="365">365-day window</option>
+    </select>
+    <select id="retGap" class="ins-sel" onchange="loadRetention(true)">
+      <option value="30" selected>Exclude add-ons (&ge;30d gap)</option>
+      <option value="0">Count every 2nd order</option>
+      <option value="60">Strict (&ge;60d gap)</option>
+    </select>
+    <span class="ins-note" id="retNote"></span>
+  </div>
+  <div class="stats" id="retKpis"></div>
+  <div id="retWarn" class="mkt-warn" style="display:none"></div>
+  <div class="ins-grid">
+    <div class="ins-card wide"><div class="ins-card-title">Repeat Rate by Cohort Age &mdash; the honest comparison</div><canvas id="chRetCurve"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Repeat Rate by Window</div><canvas id="chRetWindows"></canvas></div>
+    <div class="ins-card"><div class="ins-card-title">Days Between 1st and 2nd Order</div><canvas id="chRetGaps"></canvas></div>
+  </div>
+  <div class="mkt-table-wrap"><table class="mkt-table" id="retCohortTable"></table></div>
 </div>
 <div id="page-insights" class="page">
   <div class="ins-head">
@@ -440,6 +465,7 @@ tr.cancelled td{opacity:0.35}
 // ── STATE ──────────────────────────────────────────────
 const S = {
   marketingLoaded: false,
+  retentionLoaded: false,
   host:        '',
   key:         '',
   token:       '',
@@ -583,6 +609,7 @@ function switchTab(id, el){
   if(id==='sales' && !S.salesLoaded) loadSales();
   if(id==='finance' && !S.financeLoaded) loadFinance();
   if(id==='marketing' && !S.marketingLoaded) loadMarketing();
+  if(id==='marketing' && !S.retentionLoaded) loadRetention();
 }
 
 // ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
@@ -1395,6 +1422,120 @@ async function loadMarketing(force){
       `<tr><td><b>Total</b></td><td><b>${o.contacts}</b></td><td><b>${o.dmSent}</b></td><td><b>${o.responded}</b></td><td><b>${o.noResponse}</b></td></tr>` +
       `<tr><td colspan="5" class="muted">Response rate: ${o.responseRate==null?'—':fmtPct(o.responseRate)}${o.costPerDm!=null?' · Cost per DM sent: '+fmtMoney(o.costPerDm):''}</td></tr>`;
   }
+}
+
+// ── CLIENT RETENTION (cohort / censoring-aware) ─────────
+// A client is "Won" on their 2nd order. That event LAGS the first order, so
+// measuring conversion per calendar year compares a matured 2025 cohort against
+// a half-observed 2026 one and invents a collapse. Everything here is measured
+// by COHORT AGE instead, and cohorts too young to have had the full window are
+// EXCLUDED from the denominator — never counted as failures.
+let retCharts = {};
+
+async function loadRetention(force){
+  S.retentionLoaded = true;
+  const w = document.getElementById('retWindow').value;
+  const g = document.getElementById('retGap').value;
+  const note = document.getElementById('retNote');
+  const warn = document.getElementById('retWarn');
+  note.textContent = 'Loading…';
+  warn.style.display = 'none';
+  let d;
+  try{
+    d = await api(`/api/reports/retention?windowDays=${w}&minGapDays=${g}`);
+  }catch(e){
+    note.textContent = 'Could not load retention: ' + e.message;
+    return;
+  }
+  note.textContent = '';
+
+  const win = d.repeatRateByWindow[String(w)] || {};
+  const p26 = (d.projection && d.projection.year2026) || {};
+
+  document.getElementById('retKpis').innerHTML = [
+    [`Repeat Rate (${w}d)`, win.rate==null ? '—' : fmtPct(win.rate)],
+    ['Median Days to 2nd Order', d.medianDaysToSecondOrder==null ? '—' : d.medianDaysToSecondOrder + 'd'],
+    ['1st-Order Payback', d.economics.firstOrderPayback==null ? '—' : d.economics.firstOrderPayback.toFixed(2)+'x'],
+    ['Raw CAC', fmtMoney(d.economics.rawCacAllTime)],
+    ['Won CAC (observed)', p26.wonCacObserved==null ? '—' : fmtMoney(p26.wonCacObserved)],
+    ['Won CAC (projected)', p26.wonCacProjected==null ? '—' : fmtMoney(p26.wonCacProjected)],
+  ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+
+  // Say out loud what is and isn't trustworthy.
+  const bits = [];
+  bits.push(`Repeat rate is measured on <b>${win.eligibleClients||0} clients old enough to have had the full ${w} days</b>. Younger cohorts are excluded from the denominator, not counted as failures — that is what stops recent months from looking like a collapse.`);
+  if(d.gapWarning){ bits.push(`<b>Add-on warning:</b> ${d.gapWarning}`); }
+  if(p26.wonCacObserved!=null && p26.wonCacProjected!=null){
+    bits.push(`2026 Won CAC reads <b>${fmtMoney(p26.wonCacObserved)}</b> observed but projects to <b>${fmtMoney(p26.wonCacProjected)}</b> once this year's ${p26.newClients - (p26.wonObserved||0)} un-converted clients have had time to rebook. Observed is not a real number yet.`);
+  }
+  bits.push(`Source: <b>Spiro order history</b> (${d.dataQuality.ordersFetched} orders, ${d.dataQuality.clientsFromSpiro} clients since ${d.dataQuality.earliestOrder}) — not the manual Status column.`);
+  warn.innerHTML = bits.join('<br>');
+  warn.style.display = '';
+
+  Object.values(retCharts).forEach(c=>c.destroy());
+  retCharts = {};
+
+  // ── Cohort curve. Immature cohorts drawn faded and TRUNCATED (they simply
+  //    stop) so a short line reads as "too young", never as "converted 0%".
+  const curves = d.cohortCurve.filter(c=>c.clients >= 5);
+  retCharts.curve = new Chart(document.getElementById('chRetCurve'), {
+    type:'line',
+    data:{
+      labels: Array.from({length:12},(_,i)=>'M'+(i+1)),
+      datasets: curves.map((c,i)=>({
+        label: `${c.cohort} (n=${c.clients})${c.mature?'':' • young'}`,
+        data: Array.from({length:12},(_,m)=>{
+          const pt = c.points.find(p=>p.month===m+1);
+          return pt ? pt.pct : null;   // null = no line, not a zero
+        }),
+        borderColor: c.mature ? INS_COLORS[i % INS_COLORS.length] : 'rgba(150,150,150,0.45)',
+        borderWidth: c.mature ? 2 : 1,
+        borderDash: c.mature ? [] : [4,3],
+        backgroundColor:'transparent',
+        tension:0.3,
+        spanGaps:false,
+        pointRadius:2,
+      }))
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ boxWidth:10, font:{size:9} } },
+        tooltip:{ callbacks:{ label:c=>`${c.dataset.label}: ${fmtPct(c.parsed.y)}` } } },
+      scales:{ y:{ title:{display:true,text:'% booked a 2nd listing'},
+                   ticks:{ callback:v=>fmtPct(v) } },
+               x:{ title:{display:true,text:'Months since first order'} } } }
+  });
+
+  const wins = Object.entries(d.repeatRateByWindow);
+  retCharts.windows = new Chart(document.getElementById('chRetWindows'), {
+    type:'bar',
+    data:{ labels: wins.map(([k])=>k+'d'), datasets:[{
+      label:'Repeat rate', data: wins.map(([,v])=>v.rate), backgroundColor:INS_COLORS[0] }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+      tooltip:{ callbacks:{ afterLabel:c=>`n=${wins[c.dataIndex][1].eligibleClients} eligible` } } },
+      scales:{ y:{ ticks:{ callback:v=>fmtPct(v) } } } }
+  });
+
+  retCharts.gaps = new Chart(document.getElementById('chRetGaps'), {
+    type:'bar',
+    data:{ labels: d.gapHistogram.map(h=>h.range),
+           datasets:[{ label:'Clients', data:d.gapHistogram.map(h=>h.clients),
+             backgroundColor: d.gapHistogram.map(h=> h.range==='0-7d'||h.range==='8-14d'
+                              ? '#C08A3E' : INS_COLORS[2]) }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+      tooltip:{ callbacks:{ afterLabel:c=> (c.label==='0-7d'||c.label==='8-14d')
+        ? 'Likely same-listing add-ons' : '' } } } }
+  });
+
+  // Cohort table — immature rows show "too young", never a fake 0%
+  document.getElementById('retCohortTable').innerHTML =
+    `<tr><th>Cohort</th><th>Clients</th><th>Rebooked within ${w}d</th><th>Repeat Rate</th><th>Status</th></tr>` +
+    d.cohortTable.slice().reverse().map(c=>`<tr>
+      <td>${c.cohort}</td>
+      <td>${c.clients}</td>
+      <td>${c.convertedInWindow}</td>
+      <td class="${c.rate==null?'muted':''}">${c.rate==null ? '—' : fmtPct(c.rate)}</td>
+      <td class="${c.mature?'':'muted'}">${c.mature ? 'mature' : `too young (${c.ageDays}d old)`}</td>
+    </tr>`).join('');
 }
 </script>
 </body>
