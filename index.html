@@ -1431,7 +1431,7 @@ async function loadMarketing(force){
     let rows =
       '<tr><th>Pipeline</th><th>Contacts</th><th>Leads</th><th>Warming</th><th>DM Sent</th><th>DM Follow-up</th><th>Responded</th><th>No Response</th></tr>' +
       o.byPipeline.map(p=>`<tr>
-        <td>${p.name}${p.truncated?' <span class="muted">(capped)</span>':''}</td>
+        <td>${p.name}${p.truncated?` <span class="muted">(showing ${p.contacts} of ${p.totalInGhl||'?'})</span>`:''}</td>
         <td>${p.contacts}</td><td>${p.leads}</td><td>${p.warming}</td>
         <td>${p.dm_sent}</td><td>${p.dm_followup}</td>
         <td class="${p.responded?'':'muted'}">${p.responded}</td>
