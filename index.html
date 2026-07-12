@@ -412,6 +412,8 @@ tr.cancelled td{opacity:0.35}
   </div>
   <div class="ins-head"><span class="ins-title" style="font-size:14px">Channel Detail</span></div>
   <div class="mkt-table-wrap"><table class="mkt-table" id="mktChannelTable"></table></div>
+  <div class="ins-head"><span class="ins-title" style="font-size:14px">Meta Ads by Campaign</span></div>
+  <div class="mkt-table-wrap"><table class="mkt-table" id="mktMetaCampaignTable"></table></div>
   <div class="ins-head"><span class="ins-title" style="font-size:14px">Instagram / DM Outreach</span></div>
   <div class="mkt-table-wrap"><table class="mkt-table" id="mktOutreachTable"></table></div>
 
@@ -700,6 +702,8 @@ async function loadSales(force){
   const notes = [];
   if(d.notes.windowTruncated) notes.push('window data truncated at fetch cap');
   if(d.notes.openTruncated) notes.push('open snapshot truncated at fetch cap');
+  if(d.notes.operationalExcluded && d.notes.operationalExcluded.length)
+    notes.push('operational trackers excluded: '+d.notes.operationalExcluded.join(', '));
   document.getElementById('salesNote').textContent = notes.length ? 'Note: '+notes.join('; ') : '';
 
   // pipeline selector for the funnel chart
@@ -1408,19 +1412,41 @@ async function loadMarketing(force){
       <td class="${c.cac==null?'muted':''}">${c.cac==null? c.cacNote : fmtMoney(c.cac)}</td>
     </tr>`).join('');
 
+  // Meta campaign breakdown (spend is pooled at the channel level; this shows
+  // which Meta funnel — CGP, MBS, FB 50% Off — the clients actually came from)
+  const mcT = document.getElementById('mktMetaCampaignTable');
+  const mcs = d.metaCampaigns || [];
+  mcT.innerHTML = mcs.length
+    ? '<tr><th>Campaign (raw source)</th><th>Clients</th><th>Revenue</th></tr>' +
+      mcs.map(m=>`<tr><td>${m.campaign}</td><td>${m.clients}</td><td>${fmtMoney(m.revenue)}</td></tr>`).join('')
+    : '<tr><td class="muted">No Meta-attributed clients in this window.</td></tr>';
+
   // Outreach table
   const o = d.outreach;
   const ot = document.getElementById('mktOutreachTable');
   if(!o || !o.available){
     ot.innerHTML = '<tr><td class="muted">Outreach data unavailable.</td></tr>';
   }else{
-    ot.innerHTML =
-      '<tr><th>Pipeline</th><th>Contacts</th><th>DMs Sent</th><th>Responded</th><th>No Response</th></tr>' +
+    const f = o.funnel || {};
+    let rows =
+      '<tr><th>Pipeline</th><th>Contacts</th><th>Leads</th><th>Warming</th><th>DM Sent</th><th>DM Follow-up</th><th>Responded</th><th>No Response</th></tr>' +
       o.byPipeline.map(p=>`<tr>
-        <td>${p.name}</td><td>${p.contacts}</td><td>${p.dmSent}</td><td>${p.responded}</td><td>${p.noResponse}</td>
+        <td>${p.name}${p.truncated?' <span class="muted">(capped)</span>':''}</td>
+        <td>${p.contacts}</td><td>${p.leads}</td><td>${p.warming}</td>
+        <td>${p.dm_sent}</td><td>${p.dm_followup}</td>
+        <td class="${p.responded?'':'muted'}">${p.responded}</td>
+        <td class="${p.no_response?'':'muted'}">${p.no_response}</td>
       </tr>`).join('') +
-      `<tr><td><b>Total</b></td><td><b>${o.contacts}</b></td><td><b>${o.dmSent}</b></td><td><b>${o.responded}</b></td><td><b>${o.noResponse}</b></td></tr>` +
-      `<tr><td colspan="5" class="muted">Response rate: ${o.responseRate==null?'—':fmtPct(o.responseRate)}${o.costPerDm!=null?' · Cost per DM sent: '+fmtMoney(o.costPerDm):''}</td></tr>`;
+      `<tr><td><b>Total</b></td><td><b>${o.contacts}</b></td><td><b>${f.leads||0}</b></td><td><b>${f.warming||0}</b></td><td><b>${f.dm_sent||0}</b></td><td><b>${f.dm_followup||0}</b></td><td><b>${f.responded||0}</b></td><td><b>${f.no_response||0}</b></td></tr>`;
+    if(o.responseRateNote){
+      rows += `<tr><td colspan="8" class="muted"><b>Response rate unavailable.</b> ${o.responseRateNote}</td></tr>`;
+    }else if(o.responseRate!=null){
+      rows += `<tr><td colspan="8" class="muted">Response rate: ${fmtPct(o.responseRate)}</td></tr>`;
+    }
+    if(o.costPerDm!=null){
+      rows += `<tr><td colspan="8" class="muted">Cost per DM sent: ${fmtMoney(o.costPerDm)} (IG outreach labor / DMs sent)</td></tr>`;
+    }
+    ot.innerHTML = rows;
   }
 }
 
