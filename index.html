@@ -223,6 +223,14 @@ tr.cancelled td{opacity:0.35}
 .mkt-table th{text-align:left;padding:8px 12px;background:var(--black);color:var(--cream);font-family:var(--font-title);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;white-space:nowrap}
 .mkt-table td{padding:8px 12px;border-top:1px solid var(--sand);white-space:nowrap}
 .mkt-table td.muted{color:var(--slate);font-style:italic}
+.nr-badge{display:inline-block;background:#C0392B;color:#fff;border-radius:10px;
+  padding:1px 8px;font-size:11px;font-weight:700;margin-left:6px;vertical-align:middle}
+.nr-hot{color:#C0392B;font-weight:700}
+.nr-msg{max-width:520px;white-space:normal;line-height:1.35}
+.nr-old{color:#C0392B}
+.nr-spam td{opacity:.5}
+.nr-links a{margin-right:8px;white-space:nowrap}
+
 .ins-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:10px 24px 30px}
 .ins-card{background:var(--white);border:1px solid var(--sand);border-radius:3px;padding:16px;min-height:260px}
 .ins-card.wide{grid-column:1 / -1}
@@ -414,6 +422,17 @@ tr.cancelled td{opacity:0.35}
   <div class="mkt-table-wrap"><table class="mkt-table" id="mktChannelTable"></table></div>
   <div class="ins-head"><span class="ins-title" style="font-size:14px">Meta Ads by Campaign</span></div>
   <div class="mkt-table-wrap"><table class="mkt-table" id="mktMetaCampaignTable"></table></div>
+  <!-- ── NEEDS REPLY ─────────────────────────────────────── -->
+  <div class="ins-head">
+    <span class="ins-title">Needs Reply <span id="nrBadge" class="nr-badge" style="display:none">0</span></span>
+    <label class="ins-note" style="cursor:pointer">
+      <input type="checkbox" id="nrSpam" onchange="loadNeedsReply(true)"> show spam
+    </label>
+    <span class="ins-note" id="nrNote"></span>
+  </div>
+  <div id="nrWarn" class="mkt-warn" style="display:none"></div>
+  <div class="mkt-table-wrap"><table class="mkt-table" id="nrTable"></table></div>
+
   <div class="ins-head"><span class="ins-title" style="font-size:14px">Instagram / DM Outreach</span></div>
   <div class="mkt-table-wrap"><table class="mkt-table" id="mktOutreachTable"></table></div>
 
@@ -467,6 +486,7 @@ tr.cancelled td{opacity:0.35}
 // ── STATE ──────────────────────────────────────────────
 const S = {
   marketingLoaded: false,
+  needsReplyLoaded: false,
   retentionLoaded: false,
   host:        '',
   key:         '',
@@ -612,6 +632,7 @@ function switchTab(id, el){
   if(id==='finance' && !S.financeLoaded) loadFinance();
   if(id==='marketing' && !S.marketingLoaded) loadMarketing();
   if(id==='marketing' && !S.retentionLoaded) loadRetention();
+  if(id==='marketing' && !S.needsReplyLoaded) loadNeedsReply();
 }
 
 // ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
@@ -1562,6 +1583,64 @@ async function loadRetention(force){
       <td class="${c.rate==null?'muted':''}">${c.rate==null ? '—' : fmtPct(c.rate)}</td>
       <td class="${c.mature?'':'muted'}">${c.mature ? 'mature' : `too young (${c.ageDays}d old)`}</td>
     </tr>`).join('');
+}
+
+// Needs Reply messages are untrusted text from strangers on Instagram and go into
+// innerHTML — every interpolation of name/message below MUST stay wrapped in esc().
+
+// ── NEEDS REPLY ─────────────────────────────────────────
+// Instagram forbids cold outbound DMs via API, so a person only exists as an
+// Instagram contact in GHL because THEY messaged us. This list is therefore, by
+// construction, unanswered inbound demand — not a generic inbox.
+async function loadNeedsReply(force){
+  S.needsReplyLoaded = true;
+  const spam = document.getElementById('nrSpam').checked;
+  const note = document.getElementById('nrNote');
+  const warn = document.getElementById('nrWarn');
+  const tbl  = document.getElementById('nrTable');
+  note.textContent = 'Loading…';
+  let d;
+  try{
+    d = await api('/api/reports/needs-reply?includeSpam=' + (spam?'true':'false'));
+  }catch(e){
+    note.textContent = 'Could not load: ' + e.message;
+    return;
+  }
+  note.textContent = '';
+
+  const badge = document.getElementById('nrBadge');
+  badge.textContent = d.total;
+  badge.style.display = d.total ? '' : 'none';
+
+  warn.innerHTML =
+    `<b>${d.total}</b> people messaged you and have not been answered — `
+    + `<b>${d.hot}</b> look like buying signals, <b>${d.over24h}</b> have waited over a day, `
+    + `<b>${d.over7d}</b> over a week. ${d.spamFiltered} obvious spam message(s) hidden.`
+    + `<br><span class="muted">${d.note}</span>`;
+  warn.style.display = '';
+
+  if(!d.rows.length){
+    tbl.innerHTML = '<tr><td class="muted">Nothing waiting. Inbox is clear.</td></tr>';
+    return;
+  }
+
+  tbl.innerHTML =
+    '<tr><th>Who</th><th>Their message</th><th>Waiting</th><th></th></tr>' +
+    d.rows.map(r=>{
+      const age = r.ageDays==null ? '—'
+        : (r.ageDays >= 1 ? r.ageDays + 'd' : Math.round(r.ageHours) + 'h');
+      const old = (r.ageHours||0) > 24 ? ' nr-old' : '';
+      const links = [
+        r.igUrl ? `<a href="${r.igUrl}" target="_blank" rel="noopener">Instagram</a>` : '',
+        `<a href="${r.ghlUrl}" target="_blank" rel="noopener">Reply in GHL</a>`
+      ].filter(Boolean).join('');
+      return `<tr class="${r.spam?'nr-spam':''}">
+        <td>${r.hot?'<span class="nr-hot">● </span>':''}${esc(r.name)}<div class="muted">${r.channel}</div></td>
+        <td class="nr-msg">${r.hasBody ? esc(r.message) : '<span class="muted">(attachment / no text)</span>'}</td>
+        <td class="${old}">${age}</td>
+        <td class="nr-links">${links}</td>
+      </tr>`;
+    }).join('');
 }
 </script>
 </body>
