@@ -275,7 +275,7 @@ tr.cancelled td{opacity:0.35}
   <div class="navtab active" onclick="switchTab('home',this)">Home</div>
   <div class="navtab" onclick="switchTab('jobs',this)">Jobs</div>
   <div class="navtab" onclick="switchTab('sales',this)">Sales</div>
-  <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
+  <div class="navtab" onclick="switchTab('team',this)">Team</div>
   <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance</div>
   <div class="navtab" onclick="switchTab('marketing',this)">Marketing</div>
   <div class="navtab" onclick="switchTab('insights',this)">Insights</div>
@@ -408,7 +408,34 @@ tr.cancelled td{opacity:0.35}
   </div>
 </div>
 <div id="page-team" class="page">
-  <div class="soon-page"><div class="soon-icon">👥</div><div class="soon-title">Team Dashboard</div><div class="soon-desc">Photographer schedules, utilization, and performance metrics — coming soon.</div></div>
+  <div class="ins-head">
+    <span class="ins-title">Team</span>
+    <select id="teamMonths" class="ins-sel" onchange="loadTeam(true)">
+      <option value="3">Last 3 months</option>
+      <option value="6" selected>Last 6 months</option>
+      <option value="12">Last 12 months</option>
+    </select>
+    <select id="teamSegment" class="ins-sel" onchange="renderTeam()">
+      <option value="all" selected>All shoots</option>
+      <option value="residential">Residential</option>
+      <option value="commercial">Commercial (Matterport)</option>
+    </select>
+    <select id="teamPeriod" class="ins-sel" onchange="renderTeam()">
+      <option value="week">By week</option>
+      <option value="month" selected>By month</option>
+      <option value="quarter">By quarter</option>
+      <option value="year">By year</option>
+    </select>
+    <span class="ins-note" id="teamNote"></span>
+  </div>
+  <div class="stats" id="teamKpis"></div>
+  <div class="ins-grid">
+    <div class="ins-card wide"><div class="ins-card-title" id="teamChartTitle">Photographer Utilization</div><canvas id="chTeamUtil"></canvas></div>
+  </div>
+  <div class="ins-head"><span class="ins-title" style="font-size:14px">Roster</span></div>
+  <div class="mkt-table-wrap"><table class="mkt-table" id="teamRoster"></table></div>
+  <div class="ins-head"><span class="ins-title" style="font-size:14px">On-site Error Log</span></div>
+  <div class="mkt-table-wrap"><table class="mkt-table" id="teamErrors"></table></div>
 </div>
 <div id="page-finance" class="page">
   <div class="ins-head">
@@ -657,6 +684,7 @@ function switchTab(id, el){
   el.classList.add('active');
   document.getElementById('page-'+id).classList.add('active');
   if(id==='home' && !S.homeLoaded) loadHome();
+  if(id==='team' && !S.teamLoaded) loadTeam();
   if(id==='insights' && !S.insightsLoaded) loadInsights();
   if(id==='sales' && !S.salesLoaded) loadSales();
   if(id==='finance' && !S.financeLoaded) loadFinance();
@@ -672,6 +700,119 @@ function gotoTab(id){
 }
 
 let homeCharts = {};
+let teamCharts = {};
+let teamData = null;
+
+// ── TEAM (Phase 7) ──────────────────────────────────────
+// Utilization = shoots / (weekly capacity × weeks in period). Capacities come
+// from the photographer_capacity worksheet; until Brett fills them, the chart
+// falls back to raw shoot counts and says so.
+async function loadTeam(force){
+  S.teamLoaded = true;
+  const note = document.getElementById('teamNote');
+  note.textContent = 'Loading…';
+  try{
+    teamData = await api(`/api/reports/team?months=${document.getElementById('teamMonths').value}`);
+  }catch(e){ note.textContent = 'Could not load: '+e.message; return; }
+  note.textContent = '';
+  renderTeam();
+}
+
+function periodKey(weekIso, mode){
+  const d = new Date(weekIso+'T00:00:00Z');
+  const y = d.getUTCFullYear(), m = d.getUTCMonth()+1;
+  if(mode==='week') return weekIso;
+  if(mode==='month') return `${y}-${String(m).padStart(2,'0')}`;
+  if(mode==='quarter') return `${y}-Q${Math.ceil(m/3)}`;
+  return String(y);
+}
+
+function renderTeam(){
+  if(!teamData) return;
+  const d = teamData;
+  const seg = document.getElementById('teamSegment').value;
+  const mode = document.getElementById('teamPeriod').value;
+  const pick = w => seg==='all' ? w.residential+w.commercial
+             : seg==='residential' ? w.residential : w.commercial;
+
+  // KPI row
+  const totShoots = d.photographers.reduce((s,p)=>s+(seg==='all'?p.shoots:p[seg]),0);
+  const totErr = d.photographers.reduce((s,p)=>s+p.errors,0);
+  document.getElementById('teamKpis').innerHTML = [
+    ['Shoots ('+seg+')', totShoots],
+    ['Residential', d.photographers.reduce((s,p)=>s+p.residential,0)],
+    ['Commercial', d.photographers.reduce((s,p)=>s+p.commercial,0)],
+    ['On-site Errors', totErr],
+    ['Error Rate', totShoots?((totErr/totShoots)*100).toFixed(1)+'%':'—'],
+    ['Capacities Set', `${d.capacitiesSet}/${d.photographers.length}`],
+  ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+
+  // weeks per period (calendar Mondays between range.from and range.to)
+  const weeksIn = {};
+  {
+    let cur = new Date(d.range.from+'T00:00:00Z');
+    cur.setUTCDate(cur.getUTCDate() - ((cur.getUTCDay()+6)%7));   // back to Monday
+    const end = new Date(d.range.to+'T00:00:00Z');
+    while(cur <= end){
+      const k = periodKey(cur.toISOString().slice(0,10), mode);
+      weeksIn[k] = (weeksIn[k]||0)+1;
+      cur.setUTCDate(cur.getUTCDate()+7);
+    }
+  }
+
+  // shoots per (period, photographer)
+  const byPP = {};
+  d.weekly.forEach(w=>{
+    const k = periodKey(w.week, mode);
+    byPP[k] = byPP[k] || {};
+    byPP[k][w.photographer] = (byPP[k][w.photographer]||0) + pick(w);
+  });
+  const periods = Object.keys(byPP).sort();
+  const caps = Object.fromEntries(d.photographers.map(p=>[p.name, p.weeklyCapacity]));
+  const anyCaps = d.capacitiesSet > 0;
+  const names = d.photographers.filter(p=>p.name!=='Unassigned').map(p=>p.name).slice(0,8);
+
+  document.getElementById('teamChartTitle').textContent = anyCaps
+    ? `Photographer Utilization by ${mode} (${seg})`
+    : `Shoots by ${mode} (${seg}) — set weekly capacities in the photographer_capacity sheet to see utilization %`;
+
+  Object.values(teamCharts).forEach(c=>c.destroy());
+  teamCharts = {};
+  teamCharts.util = new Chart(document.getElementById('chTeamUtil'), {
+    type:'line',
+    data:{ labels:periods, datasets:names.map((n,i)=>({
+      label:n, tension:0.3, borderColor:INS_COLORS[i%INS_COLORS.length],
+      backgroundColor:INS_COLORS[i%INS_COLORS.length],
+      data:periods.map(k=>{
+        const shoots = (byPP[k]||{})[n]||0;
+        const cap = caps[n];
+        return (anyCaps && cap) ? +(100*shoots/(cap*weeksIn[k])).toFixed(1) : shoots;
+      }),
+    }))},
+    options:{ responsive:true, scales:{y:{beginAtZero:true,
+      ticks:{callback:v=> anyCaps ? v+'%' : v}}} }
+  });
+
+  // roster table
+  document.getElementById('teamRoster').innerHTML =
+    '<tr><th>Photographer</th><th>Shoots</th><th>Residential</th><th>Commercial</th><th>Weekly Capacity</th><th>Errors</th><th>Error Rate</th></tr>' +
+    d.photographers.map(p=>`<tr>
+      <td>${esc(p.name)}</td><td>${p.shoots}</td><td>${p.residential}</td><td>${p.commercial}</td>
+      <td class="${p.weeklyCapacity?'':'muted'}">${p.weeklyCapacity||'set in sheet'}</td>
+      <td>${p.errors}</td>
+      <td class="${p.errorRate>0.05?'tile-hot':''}">${p.errorRate==null?'—':(p.errorRate*100).toFixed(1)+'%'}</td>
+    </tr>`).join('');
+
+  // error log
+  const el = document.getElementById('teamErrors');
+  el.innerHTML = d.errorLog.length
+    ? '<tr><th>Week</th><th>Photographer</th><th>Order</th><th>Type</th><th>What happened</th></tr>' +
+      d.errorLog.map(e=>`<tr>
+        <td>${e.week||'—'}</td><td>${esc(e.photographer)}</td><td>${esc(e.orderId)}</td>
+        <td>${e.commercial?'Commercial':'Residential'}</td><td class="nr-msg">${esc(e.error)}</td>
+      </tr>`).join('')
+    : '<tr><td class="muted">No on-site errors logged in this window. Errors come from the Jobs tab notes.</td></tr>';
+}
 
 // ── HOME (Phase 6) ──────────────────────────────────────
 // One screen, every key number, each tile deep-links to its tab.
