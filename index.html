@@ -129,6 +129,14 @@ input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacit
 .stat-lbl{font-family:var(--font-body);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--slate)}
 .stat-val{font-family:var(--font-title);font-size:24px;font-weight:900;margin-top:2px;color:var(--g900)}
 .stat-sub{font-size:12px;font-weight:600;color:var(--slate);margin-left:4px}
+.tile{cursor:pointer;min-width:150px}
+.tile:hover{border-color:var(--denim)}
+.tile-bar{height:4px;background:var(--sand);border-radius:2px;margin-top:8px;overflow:hidden}
+.tile-bar span{display:block;height:100%;background:#7B93A3}
+.tile-bar span.behind{background:#C0392B}
+.tile-bar span.ahead{background:#5f8a5f}
+.tile-goal{font-size:10px;color:var(--slate);margin-top:4px}
+.tile-hot{color:#C0392B;font-weight:700}
 .sv-green {color:var(--green)}
 .sv-red   {color:var(--red)}
 .sv-amber {color:var(--amber)}
@@ -264,7 +272,8 @@ tr.cancelled td{opacity:0.35}
 <!-- TOP NAV -->
 <nav class="topnav">
   <div class="brand">VantagePoint<span class="brand-sub">3D &amp; Media</span></div>
-  <div class="navtab active" onclick="switchTab('jobs',this)">Jobs</div>
+  <div class="navtab active" onclick="switchTab('home',this)">Home</div>
+  <div class="navtab" onclick="switchTab('jobs',this)">Jobs</div>
   <div class="navtab" onclick="switchTab('sales',this)">Sales</div>
   <div class="navtab" onclick="switchTab('team',this)">Team <span class="soon">Soon</span></div>
   <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance</div>
@@ -277,7 +286,15 @@ tr.cancelled td{opacity:0.35}
 </nav>
 
 <!-- ── JOBS PAGE ──────────────────────────────────────── -->
-<div id="page-jobs" class="page active">
+<div id="page-home" class="page active">
+  <div class="ins-head">
+    <span class="ins-title">Home</span>
+    <span class="ins-note" id="homeNote"></span>
+  </div>
+  <div class="stats" id="homeTiles" style="flex-wrap:wrap"></div>
+  <div class="ins-note" id="homeMeta" style="padding:0 24px 20px"></div>
+</div>
+<div id="page-jobs" class="page">
 
   <!-- Subheader -->
   <div class="subheader">
@@ -552,6 +569,7 @@ function applyRoleGates(){
 function enterApp(){
   document.getElementById('lock').classList.add('hidden');
   applyRoleGates();
+  loadHome();
   doLoad();
 }
 
@@ -627,12 +645,76 @@ function switchTab(id, el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('page-'+id).classList.add('active');
+  if(id==='home' && !S.homeLoaded) loadHome();
   if(id==='insights' && !S.insightsLoaded) loadInsights();
   if(id==='sales' && !S.salesLoaded) loadSales();
   if(id==='finance' && !S.financeLoaded) loadFinance();
   if(id==='marketing' && !S.marketingLoaded) loadMarketing();
   if(id==='marketing' && !S.retentionLoaded) loadRetention();
   if(id==='marketing' && !S.needsReplyLoaded) loadNeedsReply();
+}
+
+function gotoTab(id){
+  const el=[...document.querySelectorAll('.navtab')]
+    .find(t=>(t.getAttribute('onclick')||'').includes(`'${id}'`));
+  if(el) switchTab(id, el);
+}
+
+// ── HOME (Phase 6) ──────────────────────────────────────
+// One screen, every key number, each tile deep-links to its tab.
+// Finance/cash tiles only arrive for owners — managers see the rest.
+async function loadHome(){
+  S.homeLoaded = true;
+  const note = document.getElementById('homeNote');
+  note.textContent = 'Loading…';
+  let d;
+  try{ d = await api('/api/reports/home'); }
+  catch(e){ note.textContent = 'Could not load: '+e.message; return; }
+  note.textContent = '';
+  const t = d.tiles || {};
+
+  function goalTile(label, g, fmt, tab){
+    if(!g || g.value==null) return '';
+    const pace = g.pace, pct = Math.min(140, Math.round((pace||0)*100));
+    const cls = pace==null ? '' : pace >= 1 ? 'ahead' : pace >= 0.85 ? '' : 'behind';
+    return `<div class="stat tile" onclick="gotoTab('${tab}')">
+      <div class="stat-lbl">${label}</div>
+      <div class="stat-val">${fmt(g.value)}</div>
+      <div class="tile-bar"><span class="${cls}" style="width:${pct}%"></span></div>
+      <div class="tile-goal">${fmt(g.expectedByNow)} expected by now · goal ${fmt(g.goalMonthly)}/mo</div>
+    </div>`;
+  }
+  function tile(label, val, tab, sub){
+    if(val==null || val==='—') return '';
+    return `<div class="stat tile" onclick="gotoTab('${tab}')">
+      <div class="stat-lbl">${label}</div>
+      <div class="stat-val">${val}</div>
+      ${sub?`<div class="tile-goal">${sub}</div>`:''}
+    </div>`;
+  }
+
+  const parts = [];
+  parts.push(goalTile('Revenue MTD', t.revenueMtd, fmtMoney, 'finance'));
+  if(t.netProfitMtd!=null)
+    parts.push(tile('Net Profit MTD', fmtMoney(t.netProfitMtd), 'finance',
+                    t.netMarginMtd!=null?fmtPct(t.netMarginMtd)+' net margin':''));
+  if(t.cash && t.cash.cash!=null)
+    parts.push(tile('Cash on Hand', fmtMoney(t.cash.cash), 'finance',
+                    `${fmtMoney(t.cash.bankTotal)} bank − ${fmtMoney(t.cash.creditCardTotal)} cards`));
+  parts.push(goalTile('New Clients MTD', t.newClientsMtd, v=>Math.round(v), 'marketing'));
+  parts.push(tile('Raw CAC', t.cacRaw!=null?fmtMoney(t.cacRaw):null, 'marketing', 'all spend / all new clients'));
+  parts.push(tile('Won CAC', t.cacWon!=null?fmtMoney(t.cacWon):null, 'marketing', 'all spend / won clients'));
+  parts.push(tile('LTV : CAC', t.ltvCac!=null?t.ltvCac.toFixed(1)+' : 1':null, 'marketing'));
+  parts.push(tile('Repeat Rate (180d)', t.repeatRate180!=null?fmtPct(t.repeatRate180):null, 'marketing', 'windowed, add-ons excluded'));
+  parts.push(tile('Shoots This Week', t.shootsThisWeek, 'jobs', `${d.period.weekFrom} → ${d.period.weekTo}`));
+  if(t.needsReply)
+    parts.push(tile('Needs Reply', t.needsReply.total, 'marketing',
+                    t.needsReply.hot?`<span class="tile-hot">${t.needsReply.hot} buying signals</span>`:'inbox clear'));
+  parts.push(tile('On-site Errors MTD', t.onsiteErrorsMtd==null?'Soon':t.onsiteErrorsMtd, 'team', 'lands with the Team tab'));
+
+  document.getElementById('homeTiles').innerHTML = parts.filter(Boolean).join('');
+  document.getElementById('homeMeta').textContent =
+    `${d.period.month} · ${Math.round((d.monthProgress||0)*100)}% of month elapsed · updated ${d.generatedAt}`;
 }
 
 // ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
