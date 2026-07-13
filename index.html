@@ -735,13 +735,19 @@ function renderTeam(){
   const pick = w => seg==='all' ? w.residential+w.commercial
              : seg==='residential' ? w.residential : w.commercial;
 
-  // KPI row
-  const totShoots = d.photographers.reduce((s,p)=>s+(seg==='all'?p.shoots:p[seg]),0);
-  const totErr = d.photographers.reduce((s,p)=>s+p.errors,0);
+  // The toggle filters BOTH the jobs counted AND which shooters appear:
+  // residential view = residential shoots by residential/dual shooters (Brett 2026-07-13).
+  const inSeg = p => seg==='all' || p.segment===seg || p.segment==='both' || p.segment==='unknown';
+  const shown = d.photographers.filter(inSeg);
+  const shownNames = new Set(shown.map(p=>p.name));
+
+  // KPI row (counts only what the current view shows)
+  const totShoots = shown.reduce((s,p)=>s+(seg==='all'?p.shoots:p[seg]),0);
+  const totErr = shown.reduce((s,p)=>s+p.errors,0);
   document.getElementById('teamKpis').innerHTML = [
     ['Shoots ('+seg+')', totShoots],
-    ['Residential', d.photographers.reduce((s,p)=>s+p.residential,0)],
-    ['Commercial', d.photographers.reduce((s,p)=>s+p.commercial,0)],
+    ['Residential', shown.reduce((s,p)=>s+p.residential,0)],
+    ['Commercial', shown.reduce((s,p)=>s+p.commercial,0)],
     ['On-site Errors', totErr],
     ['Error Rate', totShoots?((totErr/totShoots)*100).toFixed(1)+'%':'—'],
     ['Capacities Set', `${d.capacitiesSet}/${d.photographers.length}`],
@@ -770,7 +776,7 @@ function renderTeam(){
   const periods = Object.keys(byPP).sort();
   const caps = Object.fromEntries(d.photographers.map(p=>[p.name, p.weeklyCapacity]));
   const anyCaps = d.capacitiesSet > 0;
-  const names = d.photographers.filter(p=>p.name!=='Unassigned').map(p=>p.name).slice(0,8);
+  const names = shown.filter(p=>p.name!=='Unassigned').map(p=>p.name).slice(0,8);
 
   document.getElementById('teamChartTitle').textContent = anyCaps
     ? `Photographer Utilization by ${mode} (${seg})`
@@ -795,9 +801,11 @@ function renderTeam(){
 
   // roster table
   document.getElementById('teamRoster').innerHTML =
-    '<tr><th>Photographer</th><th>Shoots</th><th>Residential</th><th>Commercial</th><th>Weekly Capacity</th><th>Errors</th><th>Error Rate</th></tr>' +
-    d.photographers.map(p=>`<tr>
-      <td>${esc(p.name)}</td><td>${p.shoots}</td><td>${p.residential}</td><td>${p.commercial}</td>
+    '<tr><th>Photographer</th><th>Segment</th><th>Shoots</th><th>Residential</th><th>Commercial</th><th>Weekly Capacity</th><th>Errors</th><th>Error Rate</th></tr>' +
+    shown.map(p=>`<tr>
+      <td>${esc(p.name)}</td>
+      <td class="${p.segment==='unknown'?'muted':''}">${p.segment==='unknown'?'label in sheet':esc(p.segment)}</td>
+      <td>${p.shoots}</td><td>${p.residential}</td><td>${p.commercial}</td>
       <td class="${p.weeklyCapacity?'':'muted'}">${p.weeklyCapacity||'set in sheet'}</td>
       <td>${p.errors}</td>
       <td class="${p.errorRate>0.05?'tile-hot':''}">${p.errorRate==null?'—':(p.errorRate*100).toFixed(1)+'%'}</td>
