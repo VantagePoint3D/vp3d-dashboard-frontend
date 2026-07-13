@@ -292,6 +292,17 @@ tr.cancelled td{opacity:0.35}
     <span class="ins-note" id="homeNote"></span>
   </div>
   <div class="stats" id="homeTiles" style="flex-wrap:wrap"></div>
+  <div class="ins-grid" id="homeCharts" style="display:none">
+    <div class="ins-card wide" id="cardRevYtd" style="display:none">
+      <div class="ins-card-title">Revenue: Year Progress vs $1M Pace</div><canvas id="chRevYtd"></canvas>
+    </div>
+    <div class="ins-card" id="cardCash" style="display:none">
+      <div class="ins-card-title">Cash Position by Month (Bank vs Credit Cards)</div><canvas id="chCash"></canvas>
+    </div>
+    <div class="ins-card" id="cardShoots" style="display:none">
+      <div class="ins-card-title">Shoots per Month</div><canvas id="chShoots"></canvas>
+    </div>
+  </div>
   <div class="ins-note" id="homeMeta" style="padding:0 24px 20px"></div>
 </div>
 <div id="page-jobs" class="page">
@@ -660,6 +671,8 @@ function gotoTab(id){
   if(el) switchTab(id, el);
 }
 
+let homeCharts = {};
+
 // ── HOME (Phase 6) ──────────────────────────────────────
 // One screen, every key number, each tile deep-links to its tab.
 // Finance/cash tiles only arrive for owners — managers see the rest.
@@ -715,6 +728,50 @@ async function loadHome(){
   document.getElementById('homeTiles').innerHTML = parts.filter(Boolean).join('');
   document.getElementById('homeMeta').textContent =
     `${d.period.month} · ${Math.round((d.monthProgress||0)*100)}% of month elapsed · updated ${d.generatedAt}`;
+
+  // ── charts ──
+  const ch = d.charts || {};
+  Object.values(homeCharts).forEach(c=>c.destroy());
+  homeCharts = {};
+  const any = ch.revenueYtd || ch.cashByMonth || ch.shootsByMonth;
+  document.getElementById('homeCharts').style.display = any ? '' : 'none';
+
+  if(ch.revenueYtd){
+    document.getElementById('cardRevYtd').style.display = '';
+    const r = ch.revenueYtd;
+    homeCharts.rev = new Chart(document.getElementById('chRevYtd'), {
+      data:{ labels:r.months, datasets:[
+        {type:'bar', label:'Monthly Income', data:r.income, backgroundColor:'#7B93A3'},
+        {type:'line', label:'Cumulative', data:r.cumulative, borderColor:'#637d90',
+         backgroundColor:'rgba(99,125,144,0.12)', fill:true, tension:0.3},
+        {type:'line', label:'$1M Pace', data:r.goalCumulative, borderColor:'#C0392B',
+         borderDash:[6,4], pointRadius:0, fill:false},
+      ]},
+      options:{ responsive:true, scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}} }
+    });
+  }
+  if(ch.cashByMonth){
+    document.getElementById('cardCash').style.display = '';
+    const c = ch.cashByMonth;
+    homeCharts.cash = new Chart(document.getElementById('chCash'), {
+      data:{ labels:c.months, datasets:[
+        {type:'bar', label:'Bank', data:c.bank, backgroundColor:'#7B93A3'},
+        {type:'bar', label:'Credit Cards (owed)', data:c.creditCards, backgroundColor:'#b08d7a'},
+        {type:'line', label:'Blended (Bank − Cards)', data:c.net, borderColor:'#637d90',
+         backgroundColor:'#637d90', tension:0.3},
+      ]},
+      options:{ responsive:true, scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}} }
+    });
+  }
+  if(ch.shootsByMonth){
+    document.getElementById('cardShoots').style.display = '';
+    const s = ch.shootsByMonth;
+    homeCharts.shoots = new Chart(document.getElementById('chShoots'), {
+      type:'bar',
+      data:{ labels:s.months, datasets:[{label:'Shoots', data:s.shoots, backgroundColor:'#9E9D8D'}] },
+      options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    });
+  }
 }
 
 // ── OPERATIONS INSIGHTS (Phase 1) ──────────────────────
