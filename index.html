@@ -128,6 +128,7 @@ input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacit
 .stat{background:var(--white);border-radius:3px;padding:12px 18px;min-width:120px;flex-shrink:0;border:1px solid var(--g200)}
 .stat-lbl{font-family:var(--font-body);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--slate)}
 .stat-val{font-family:var(--font-title);font-size:24px;font-weight:900;margin-top:2px;color:var(--g900)}
+.stat-sub{font-size:12px;font-weight:600;color:var(--slate);margin-left:4px}
 .sv-green {color:var(--green)}
 .sv-red   {color:var(--red)}
 .sv-amber {color:var(--amber)}
@@ -395,8 +396,7 @@ tr.cancelled td{opacity:0.35}
   <div class="stats" id="finKpis"></div>
   <div class="ins-grid">
     <div class="ins-card wide"><div class="ins-card-title">Income, Expenses &amp; Net Profit by Month</div><canvas id="chPnl"></canvas></div>
-    <div class="ins-card"><div class="ins-card-title">Expense Categories</div><canvas id="chExpCats"></canvas></div>
-    <div class="ins-card"><div class="ins-card-title">Accounts Receivable Aging</div><canvas id="chAging"></canvas></div>
+    <div class="ins-card wide"><div class="ins-card-title">Where the Money Goes (COGS + Operating, with $)</div><canvas id="chExpCats"></canvas></div>
   </div>
 </div>
 <div id="page-marketing" class="page">
@@ -812,12 +812,15 @@ async function loadFinance(force){
   btn.style.display = 'none';
   note.textContent = '';
   const k = d.kpis;
+  // COGS is mostly contractor pay (Subcontracted Services) — the parser now reads
+  // it, so Expenses = COGS + Operating and the margin is finally real.
   document.getElementById('finKpis').innerHTML = [
     ['Income', fmtMoney(k.income)],
-    ['Expenses', fmtMoney(k.expenses)],
+    ['COGS (incl. contractors)', fmtMoney(k.cogs)],
+    ['Gross Profit', `${fmtMoney(k.grossProfit)} <span class="stat-sub">${fmtPct(k.grossMargin)}</span>`],
+    ['Operating Exp', fmtMoney(k.opex)],
     ['Net Profit', fmtMoney(k.netProfit)],
-    ['Margin', fmtPct(k.margin)],
-    ['A/R Outstanding', fmtMoney(k.arOutstanding)],
+    ['Net Margin', fmtPct(k.margin)],
   ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
 
   Object.values(finCharts).forEach(c=>c.destroy());
@@ -825,21 +828,21 @@ async function loadFinance(force){
   finCharts.pnl = new Chart(document.getElementById('chPnl'), {
     data:{ labels:d.pnl.months, datasets:[
       {type:'bar', label:'Income', data:d.pnl.income, backgroundColor:'#7B93A3'},
-      {type:'bar', label:'Expenses', data:d.pnl.expenses, backgroundColor:'#c9c4a9'},
+      {type:'bar', label:'COGS', data:d.pnl.cogs, backgroundColor:'#b08d7a', stack:'out'},
+      {type:'bar', label:'Operating', data:d.pnl.opex, backgroundColor:'#c9c4a9', stack:'out'},
       {type:'line', label:'Net Profit', data:d.pnl.net, borderColor:'#637d90', backgroundColor:'#637d90', tension:0.3},
     ]},
     options:{ responsive:true, scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}} }
   });
+  const cats = d.pnl.costCategories || [];
   finCharts.cats = new Chart(document.getElementById('chExpCats'), {
     type:'doughnut',
-    data:{ labels:d.pnl.expenseCategories.map(c=>c.name),
-           datasets:[{data:d.pnl.expenseCategories.map(c=>c.total), backgroundColor:INS_COLORS}] },
-    options:{ responsive:true, plugins:{legend:{position:'right', labels:{boxWidth:12, font:{size:10}}}} }
-  });
-  finCharts.aging = new Chart(document.getElementById('chAging'), {
-    type:'bar',
-    data:{ labels:d.arAging.map(b=>b.bucket), datasets:[{label:'Outstanding', data:d.arAging.map(b=>b.amount), backgroundColor:'#9E9D8D'}] },
-    options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{callback:v=>'$'+v.toLocaleString()}}} }
+    data:{ labels:cats.map(c=>`${c.name} — $${Math.round(c.total).toLocaleString()}`),
+           datasets:[{data:cats.map(c=>c.total), backgroundColor:INS_COLORS}] },
+    options:{ responsive:true, plugins:{
+      legend:{position:'right', labels:{boxWidth:12, font:{size:10}}},
+      tooltip:{callbacks:{label:(ctx)=>`${cats[ctx.dataIndex].section}: $${Math.round(ctx.parsed).toLocaleString()}`}}
+    }}
   });
 }
 
