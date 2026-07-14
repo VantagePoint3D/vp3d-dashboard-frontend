@@ -391,11 +391,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-sales" class="page">
   <div class="ins-head">
     <span class="ins-title">Sales Pipeline</span>
-    <select id="salesDays" class="ins-sel" onchange="loadSales(true)">
-      <option value="30">Last 30 days</option>
-      <option value="90" selected>Last 90 days</option>
-      <option value="180">Last 180 days</option>
-    </select>
+    <span class="range-mount" data-tab="sales" data-default="m3"></span>
     <select id="salesPipeline" class="ins-sel" onchange="renderFunnel()"></select>
     <span class="ins-note" id="salesNote"></span>
   </div>
@@ -410,11 +406,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-team" class="page">
   <div class="ins-head">
     <span class="ins-title">Team</span>
-    <select id="teamMonths" class="ins-sel" onchange="loadTeam(true)">
-      <option value="3">Last 3 months</option>
-      <option value="6" selected>Last 6 months</option>
-      <option value="12">Last 12 months</option>
-    </select>
+    <span class="range-mount" data-tab="team" data-default="m6"></span>
     <select id="teamSegment" class="ins-sel" onchange="renderTeam()">
       <option value="all" selected>All shoots</option>
       <option value="residential">Residential</option>
@@ -440,11 +432,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-finance" class="page">
   <div class="ins-head">
     <span class="ins-title">Finance</span>
-    <select id="finMonths" class="ins-sel" onchange="loadFinance(true)">
-      <option value="3">Last 3 months</option>
-      <option value="6" selected>Last 6 months</option>
-      <option value="12">Last 12 months</option>
-    </select>
+    <span class="range-mount" data-tab="fin" data-default="m6"></span>
     <span class="ins-note" id="finNote"></span>
     <button class="btn-primary" id="qboConnectBtn" style="display:none" onclick="connectQbo()">Connect QuickBooks</button>
   </div>
@@ -457,11 +445,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-marketing" class="page">
   <div class="ins-head">
     <span class="ins-title">Marketing</span>
-    <select id="mktMonths" class="ins-sel" onchange="loadMarketing(true)">
-      <option value="6">Last 6 months</option>
-      <option value="12" selected>Last 12 months</option>
-      <option value="24">Last 24 months</option>
-    </select>
+    <span class="range-mount" data-tab="mkt" data-default="m12"></span>
     <span class="ins-note" id="mktNote"></span>
   </div>
   <div class="stats" id="mktKpis"></div>
@@ -519,11 +503,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-insights" class="page">
   <div class="ins-head">
     <span class="ins-title">Operations Insights</span>
-    <select id="insMonths" class="ins-sel" onchange="loadInsights(true)">
-      <option value="3">Last 3 months</option>
-      <option value="6" selected>Last 6 months</option>
-      <option value="12">Last 12 months</option>
-    </select>
+    <span class="range-mount" data-tab="ins" data-default="m6"></span>
     <span class="ins-note" id="insNote"></span>
   </div>
   <div class="stats" id="insKpis"></div>
@@ -607,6 +587,9 @@ function applyRoleGates(){
 function enterApp(){
   document.getElementById('lock').classList.add('hidden');
   applyRoleGates();
+  mountRangeControls();
+  Object.assign(RANGE_LOADERS, {sales: loadSales, team: loadTeam,
+                                fin: loadFinance, mkt: loadMarketing, ins: loadInsights});
   loadHome();
   doLoad();
 }
@@ -703,6 +686,67 @@ let homeCharts = {};
 let teamCharts = {};
 let teamData = null;
 
+// ── SHARED DATE RANGE CONTROL (Brett 2026-07-13: same selector everywhere) ──
+// week = last 7 days · month = month-to-date · quarter = quarter-to-date ·
+// m3/m6/m12 = trailing months · custom = explicit from/to.
+const RANGE_LOADERS = {};   // tab key -> loader fn, registered below
+
+function mountRangeControls(){
+  document.querySelectorAll('.range-mount').forEach(el=>{
+    const tab = el.dataset.tab, dflt = el.dataset.default || 'm6';
+    el.innerHTML = `
+      <select id="${tab}Range" class="ins-sel" onchange="rangeChanged('${tab}')">
+        <option value="week">Week</option>
+        <option value="month">Month</option>
+        <option value="quarter">Quarter</option>
+        <option value="m3">3 months</option>
+        <option value="m6">6 months</option>
+        <option value="m12">12 months</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <span id="${tab}Custom" style="display:none">
+        <input type="date" id="${tab}From" class="ins-sel">
+        <input type="date" id="${tab}To" class="ins-sel">
+        <button class="btn-primary" style="padding:4px 10px" onclick="reloadRange('${tab}')">Apply</button>
+      </span>`;
+    document.getElementById(tab+'Range').value = dflt;
+  });
+}
+
+function rangeDates(tab){
+  const v = document.getElementById(tab+'Range').value;
+  const now = new Date();
+  const iso = d => d.toISOString().slice(0,10);
+  if(v==='custom'){
+    const f = document.getElementById(tab+'From').value;
+    const t = document.getElementById(tab+'To').value;
+    return (f && t) ? {from:f, to:t} : null;   // wait for Apply with both dates
+  }
+  const from = new Date(now);
+  if(v==='week') from.setDate(now.getDate()-6);
+  else if(v==='month') from.setDate(1);
+  else if(v==='quarter'){ from.setMonth(Math.floor(now.getMonth()/3)*3, 1); }
+  else { const n = {m3:3, m6:6, m12:12}[v]; from.setMonth(now.getMonth()-(n-1), 1); }
+  return {from: iso(from), to: iso(now)};
+}
+
+function rangeQS(tab){
+  const r = rangeDates(tab);
+  return r ? `from=${r.from}&to=${r.to}` : null;
+}
+
+function rangeChanged(tab){
+  const custom = document.getElementById(tab+'Range').value==='custom';
+  document.getElementById(tab+'Custom').style.display = custom ? '' : 'none';
+  if(!custom) reloadRange(tab);
+}
+
+function reloadRange(tab){
+  if(!rangeQS(tab)) return;         // custom picked but dates incomplete
+  const fn = RANGE_LOADERS[tab];
+  if(fn) fn(true);
+}
+
 // ── TEAM (Phase 7) ──────────────────────────────────────
 // Utilization = shoots / (weekly capacity × weeks in period). Capacities come
 // from the photographer_capacity worksheet; until Brett fills them, the chart
@@ -712,7 +756,7 @@ async function loadTeam(force){
   const note = document.getElementById('teamNote');
   note.textContent = 'Loading…';
   try{
-    teamData = await api(`/api/reports/team?months=${document.getElementById('teamMonths').value}`);
+    teamData = await api(`/api/reports/team?${rangeQS('team')}`);
   }catch(e){ note.textContent = 'Could not load: '+e.message; return; }
   note.textContent = '';
   renderTeam();
@@ -932,11 +976,11 @@ function fmtPct(n){ return n==null ? '—' : (n*100).toFixed(1)+'%'; }
 
 async function loadInsights(force){
   S.insightsLoaded = true;
-  const months = document.getElementById('insMonths').value;
+  const rq = rangeQS('ins');
   document.getElementById('insNote').textContent = 'Loading…';
   let d;
   try{
-    d = await api(`/api/reports/operations?months=${months}`);
+    d = await api(`/api/reports/operations?${rq}`);
   }catch(e){
     document.getElementById('insNote').textContent = 'Failed to load report: '+e.message;
     return;
@@ -991,10 +1035,9 @@ let salesCharts = {};
 
 async function loadSales(force){
   S.salesLoaded = true;
-  const days = document.getElementById('salesDays').value;
   document.getElementById('salesNote').textContent = 'Loading…';
   try{
-    salesData = await api(`/api/reports/pipeline?days=${days}`);
+    salesData = await api(`/api/reports/pipeline?${rangeQS('sales')}`);
   }catch(e){
     document.getElementById('salesNote').textContent = 'Failed to load pipeline: '+e.message;
     return;
@@ -1074,13 +1117,13 @@ async function connectQbo(){
 
 async function loadFinance(force){
   S.financeLoaded = true;
-  const months = document.getElementById('finMonths').value;
+  const rq = rangeQS('fin');
   const note = document.getElementById('finNote');
   const btn = document.getElementById('qboConnectBtn');
   note.textContent = 'Loading…';
   let d;
   try{
-    d = await api(`/api/reports/finance?months=${months}`);
+    d = await api(`/api/reports/finance?${rq}`);
   }catch(e){
     try{
       const st = await api('/api/qbo/status');
@@ -1613,14 +1656,14 @@ let mktCharts = {};
 
 async function loadMarketing(force){
   S.marketingLoaded = true;
-  const months = document.getElementById('mktMonths').value;
+  const rq = rangeQS('mkt');
   const note = document.getElementById('mktNote');
   const warn = document.getElementById('mktWarn');
   note.textContent = 'Loading…';
   warn.style.display = 'none';
   let d;
   try{
-    d = await api(`/api/reports/marketing?months=${months}`);
+    d = await api(`/api/reports/marketing?${rq}`);
   }catch(e){
     note.textContent = 'Could not load marketing data: ' + e.message;
     return;
