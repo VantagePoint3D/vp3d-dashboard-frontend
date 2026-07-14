@@ -297,12 +297,13 @@ tr.cancelled td{opacity:0.35}
 <div id="page-home" class="page active">
   <div class="ins-head">
     <span class="ins-title">Home</span>
+    <span class="range-mount" data-tab="home" data-default="tm"></span>
     <span class="ins-note" id="homeNote"></span>
   </div>
   <div class="stats" id="homeTiles" style="flex-wrap:wrap"></div>
   <div class="ins-grid" id="homeCharts" style="display:none">
     <div class="ins-card wide" id="cardRevYtd" style="display:none">
-      <div class="ins-card-title">Revenue: Year Progress vs $1M Pace</div><canvas id="chRevYtd"></canvas>
+      <div class="ins-card-title">Revenue vs $1M-Pace Goal (selected range)</div><canvas id="chRevYtd"></canvas>
     </div>
     <div class="ins-card" id="cardCash" style="display:none">
       <div class="ins-card-title">Cash Position by Month (Bank vs Credit Cards)</div><canvas id="chCash"></canvas>
@@ -399,7 +400,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-sales" class="page">
   <div class="ins-head">
     <span class="ins-title">Sales Pipeline</span>
-    <span class="range-mount" data-tab="sales" data-default="m3"></span>
+    <span class="range-mount" data-tab="sales" data-default="tq"></span>
     <select id="salesPipeline" class="ins-sel" onchange="renderFunnel()"></select>
     <span class="ins-note" id="salesNote"></span>
   </div>
@@ -414,7 +415,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-team" class="page">
   <div class="ins-head">
     <span class="ins-title">Team</span>
-    <span class="range-mount" data-tab="team" data-default="m6"></span>
+    <span class="range-mount" data-tab="team" data-default="tq"></span>
     <select id="teamSegment" class="ins-sel" onchange="renderTeam()">
       <option value="all" selected>All shoots</option>
       <option value="residential">Residential</option>
@@ -440,7 +441,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-finance" class="page">
   <div class="ins-head">
     <span class="ins-title">Finance</span>
-    <span class="range-mount" data-tab="fin" data-default="m6"></span>
+    <span class="range-mount" data-tab="fin" data-default="m12"></span>
     <span class="ins-note" id="finNote"></span>
     <button class="btn-primary" id="qboConnectBtn" style="display:none" onclick="connectQbo()">Connect QuickBooks</button>
   </div>
@@ -511,7 +512,7 @@ tr.cancelled td{opacity:0.35}
 <div id="page-insights" class="page">
   <div class="ins-head">
     <span class="ins-title">Operations Insights</span>
-    <span class="range-mount" data-tab="ins" data-default="m6"></span>
+    <span class="range-mount" data-tab="ins" data-default="tq"></span>
     <span class="ins-note" id="insNote"></span>
   </div>
   <div class="stats" id="insKpis"></div>
@@ -596,7 +597,7 @@ function enterApp(){
   document.getElementById('lock').classList.add('hidden');
   applyRoleGates();
   mountRangeControls();
-  Object.assign(RANGE_LOADERS, {sales: loadSales, team: loadTeam,
+  Object.assign(RANGE_LOADERS, {home: loadHome, sales: loadSales, team: loadTeam,
                                 fin: loadFinance, mkt: loadMarketing, ins: loadInsights});
   loadHome();
   doLoad();
@@ -706,12 +707,15 @@ function mountRangeControls(){
     const tab = el.dataset.tab, dflt = el.dataset.default || 'm6';
     el.innerHTML = `
       <select id="${tab}Range" class="ins-sel" onchange="rangeChanged('${tab}')">
-        <option value="week">Week</option>
-        <option value="month">Month</option>
-        <option value="quarter">Quarter</option>
-        <option value="m3">3 months</option>
-        <option value="m6">6 months</option>
-        <option value="m12">12 months</option>
+        <option value="tw">This Week</option>
+        <option value="lw">Last Week</option>
+        <option value="tm">This Month</option>
+        <option value="lm">Last Month</option>
+        <option value="tq">This Quarter</option>
+        <option value="lq">Last Quarter</option>
+        <option value="ty">This Year</option>
+        <option value="ly">Last Year</option>
+        <option value="m12">Rolling 12 Months</option>
         <option value="custom">Custom…</option>
       </select>
       <span id="${tab}Custom" style="display:none">
@@ -725,19 +729,32 @@ function mountRangeControls(){
 
 function rangeDates(tab){
   const v = document.getElementById(tab+'Range').value;
-  const now = new Date();
-  const iso = d => d.toISOString().slice(0,10);
   if(v==='custom'){
     const f = document.getElementById(tab+'From').value;
     const t = document.getElementById(tab+'To').value;
     return (f && t) ? {from:f, to:t} : null;   // wait for Apply with both dates
   }
-  const from = new Date(now);
-  if(v==='week') from.setDate(now.getDate()-6);
-  else if(v==='month') from.setDate(1);
-  else if(v==='quarter'){ from.setMonth(Math.floor(now.getMonth()/3)*3, 1); }
-  else { const n = {m3:3, m6:6, m12:12}[v]; from.setMonth(now.getMonth()-(n-1), 1); }
-  return {from: iso(from), to: iso(now)};
+  // Build dates from LOCAL parts, format directly — toISOString shifts across
+  // midnight UTC and can put "today" on the wrong day.
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const now = new Date();
+  const y = now.getFullYear(), mo = now.getMonth();
+  const monday = off => { const d = new Date(now); d.setDate(now.getDate()-((now.getDay()+6)%7)+off); return d; };
+  const qs = Math.floor(mo/3)*3;
+  let from, to = now;
+  switch(v){
+    case 'tw': from = monday(0); break;
+    case 'lw': from = monday(-7); to = monday(-1); break;
+    case 'tm': from = new Date(y, mo, 1); break;
+    case 'lm': from = new Date(y, mo-1, 1); to = new Date(y, mo, 0); break;
+    case 'tq': from = new Date(y, qs, 1); break;
+    case 'lq': from = new Date(y, qs-3, 1); to = new Date(y, qs, 0); break;
+    case 'ty': from = new Date(y, 0, 1); break;
+    case 'ly': from = new Date(y-1, 0, 1); to = new Date(y-1, 11, 31); break;
+    case 'm12': from = new Date(y, mo-11, 1); break;
+    default: from = new Date(y, mo-11, 1);
+  }
+  return {from: fmt(from), to: fmt(to)};
 }
 
 function rangeQS(tab){
@@ -884,7 +901,7 @@ async function loadHome(){
   const note = document.getElementById('homeNote');
   note.textContent = 'Loading…';
   let d;
-  try{ d = await api('/api/reports/home'); }
+  try{ d = await api('/api/reports/home?'+(rangeQS('home')||'')); }
   catch(e){ note.textContent = 'Could not load: '+e.message; return; }
   note.textContent = '';
   const t = d.tiles || {};
@@ -897,7 +914,7 @@ async function loadHome(){
       <div class="stat-lbl">${label}</div>
       <div class="stat-val">${fmt(g.value)}</div>
       <div class="tile-bar"><span class="${cls}" style="width:${pct}%"></span></div>
-      <div class="tile-goal">${fmt(g.expectedByNow)} expected by now · goal ${fmt(g.goalMonthly)}/mo</div>
+      <div class="tile-goal">${fmt(g.expectedByNow)} expected by now · range goal ${fmt(g.goalTotal)}</div>
     </div>`;
   }
   function tile(label, val, tab, sub){
@@ -910,27 +927,27 @@ async function loadHome(){
   }
 
   const parts = [];
-  parts.push(goalTile('Revenue MTD', t.revenueMtd, fmtMoney, 'finance'));
-  if(t.netProfitMtd!=null)
-    parts.push(tile('Net Profit MTD', fmtMoney(t.netProfitMtd), 'finance',
-                    t.netMarginMtd!=null?fmtPct(t.netMarginMtd)+' net margin':''));
+  parts.push(goalTile('Revenue', t.revenue, fmtMoney, 'finance'));
+  if(t.netProfit!=null)
+    parts.push(tile('Net Profit', fmtMoney(t.netProfit), 'finance',
+                    t.netMargin!=null?fmtPct(t.netMargin)+' net margin':''));
   if(t.cash && t.cash.cash!=null)
     parts.push(tile('Cash on Hand', fmtMoney(t.cash.cash), 'finance',
                     `${fmtMoney(t.cash.bankTotal)} bank − ${fmtMoney(t.cash.creditCardTotal)} cards`));
-  parts.push(goalTile('New Clients MTD', t.newClientsMtd, v=>Math.round(v), 'marketing'));
+  parts.push(goalTile('New Clients', t.newClients, v=>Math.round(v), 'marketing'));
   parts.push(tile('Raw CAC', t.cacRaw!=null?fmtMoney(t.cacRaw):null, 'marketing', 'all spend / all new clients'));
   parts.push(tile('Won CAC', t.cacWon!=null?fmtMoney(t.cacWon):null, 'marketing', 'all spend / won clients'));
   parts.push(tile('LTV : CAC', t.ltvCac!=null?t.ltvCac.toFixed(1)+' : 1':null, 'marketing'));
   parts.push(tile('Repeat Rate (180d)', t.repeatRate180!=null?fmtPct(t.repeatRate180):null, 'marketing', 'windowed, add-ons excluded'));
-  parts.push(tile('Shoots This Week', t.shootsThisWeek, 'jobs', `${d.period.weekFrom} → ${d.period.weekTo}`));
+  parts.push(tile('Shoots', t.shoots, 'jobs', `${d.range.from} → ${d.range.to}`));
   if(t.needsReply)
     parts.push(tile('Needs Reply', t.needsReply.total, 'marketing',
                     t.needsReply.hot?`<span class="tile-hot">${t.needsReply.hot} buying signals</span>`:'inbox clear'));
-  parts.push(tile('On-site Errors MTD', t.onsiteErrorsMtd==null?'Soon':t.onsiteErrorsMtd, 'team', 'lands with the Team tab'));
+  parts.push(tile('On-site Errors', t.onsiteErrors==null?'—':t.onsiteErrors, 'team', 'from Jobs-tab error notes'));
 
   document.getElementById('homeTiles').innerHTML = parts.filter(Boolean).join('');
   document.getElementById('homeMeta').textContent =
-    `${d.period.month} · ${Math.round((d.monthProgress||0)*100)}% of month elapsed · updated ${d.generatedAt}`;
+    `${d.range.from} → ${d.range.to} · updated ${d.generatedAt}`;
 
   // ── charts ──
   const ch = d.charts || {};
