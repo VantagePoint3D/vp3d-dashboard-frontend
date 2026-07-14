@@ -257,14 +257,22 @@ tr.cancelled td{opacity:0.35}
     <div class="lock-logo">VantagePoint 3D</div>
     <div class="lock-sub">Command Center · Team Access</div>
     <div id="lockStep1">
-      <div class="lock-label">API Server URL</div>
-      <input class="lock-input" id="lockHost" type="url" placeholder="https://dashboard.vantagepointmarketingmedia.com" autocomplete="off">
-      <div class="lock-label" style="margin-top:14px">Email</div>
+      <div class="lock-label">Email</div>
       <input class="lock-input" id="lockEmail" type="email" placeholder="you@vantagepoint3d.com" autocomplete="username">
       <div class="lock-label" style="margin-top:14px">Password</div>
       <input class="lock-input" id="lockKey" type="password" placeholder="Enter your password" autocomplete="current-password">
       <button class="lock-btn" onclick="doLogin()">Sign In</button>
       <div class="lock-err" id="lockErr"></div>
+      <!-- API host is baked in (see DEFAULT_API_HOST); this stays for the rare
+           day the backend domain changes — click the link to reveal it -->
+      <div id="lockHostRow" style="display:none">
+        <div class="lock-label" style="margin-top:14px">API Server URL</div>
+        <input class="lock-input" id="lockHost" type="url" autocomplete="off">
+      </div>
+      <div style="margin-top:12px;text-align:center">
+        <a href="#" onclick="document.getElementById('lockHostRow').style.display='';return false"
+           style="font-size:10px;color:#888;text-decoration:none">server settings</a>
+      </div>
     </div>
   </div>
 </div>
@@ -594,11 +602,13 @@ function enterApp(){
   doLoad();
 }
 
+const DEFAULT_API_HOST = 'https://web-production-01c67.up.railway.app';
+
 function doLogin(){
-  const host  = document.getElementById('lockHost').value.trim().replace(/\/$/,'');
+  const host  = (document.getElementById('lockHost').value.trim() || DEFAULT_API_HOST).replace(/\/$/,'');
   const email = document.getElementById('lockEmail').value.trim();
   const pw    = document.getElementById('lockKey').value;
-  if(!host){document.getElementById('lockErr').textContent='Enter the API server URL.';return;}
+  
   if(!email||!pw){document.getElementById('lockErr').textContent='Enter your email and password.';return;}
   document.getElementById('lockErr').textContent='Signing in…';
   fetch(`${host}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})})
@@ -628,7 +638,7 @@ function doLogout(){
 window.addEventListener('DOMContentLoaded',()=>{
   const host  = localStorage.getItem('vp3d_host');
   const token = localStorage.getItem('vp3d_token');
-  if(host) document.getElementById('lockHost').value = host;
+  document.getElementById('lockHost').value = host || DEFAULT_API_HOST;
   if(host && token){
     S.host=host; S.token=token;
     S.role  = localStorage.getItem('vp3d_role')  || '';
