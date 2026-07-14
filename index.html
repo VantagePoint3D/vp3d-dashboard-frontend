@@ -137,6 +137,8 @@ input[type="date"].ctrl::-webkit-calendar-picker-indicator{cursor:pointer;opacit
 .tile-bar span.ahead{background:#5f8a5f}
 .tile-goal{font-size:10px;color:var(--slate);margin-top:4px}
 .tile-hot{color:#C0392B;font-weight:700}
+.tile-dim{opacity:.45}
+.wb-tag{font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--slate)}
 .sv-green {color:var(--green)}
 .sv-red   {color:var(--red)}
 .sv-amber {color:var(--amber)}
@@ -298,6 +300,11 @@ tr.cancelled td{opacity:0.35}
   <div class="ins-head">
     <span class="ins-title">Home</span>
     <span class="range-mount" data-tab="home" data-default="tm"></span>
+    <select id="homeSegment" class="ins-sel" onchange="loadHome()">
+      <option value="all" selected>All shoots</option>
+      <option value="residential">Residential</option>
+      <option value="commercial">Commercial (Matterport)</option>
+    </select>
     <span class="ins-note" id="homeNote"></span>
   </div>
   <div class="stats" id="homeTiles" style="flex-wrap:wrap"></div>
@@ -812,25 +819,31 @@ function renderTeam(){
   const shown = d.photographers.filter(inSeg);
   const shownNames = new Set(shown.map(p=>p.name));
 
-  // total capacity for the range = weekly capacity x weeks in range
-  let rangeWeeks = 0;
-  { let cur = new Date(d.range.from+'T00:00:00Z');
-    cur.setUTCDate(cur.getUTCDate()-((cur.getUTCDay()+6)%7));
+  // total capacity for the range = DAILY capacity x business days (Mon-Fri)
+  // in the range (Brett 2026-07-14: business days, not weeks, so partial
+  // months grade fairly)
+  let bizDays = d.range.businessDays;
+  if(bizDays==null){   // fallback if the API response predates businessDays
+    bizDays = 0;
+    let cur = new Date(d.range.from+'T00:00:00Z');
     const endD = new Date(d.range.to+'T00:00:00Z');
-    while(cur <= endD){ rangeWeeks++; cur.setUTCDate(cur.getUTCDate()+7); } }
+    while(cur <= endD){ if(((cur.getUTCDay()+6)%7)<5) bizDays++; cur.setUTCDate(cur.getUTCDate()+1); }
+  }
   const segShoots = p => seg==='all' ? p.shoots : p[seg];
-  const capRange = p => p.weeklyCapacity ? p.weeklyCapacity * rangeWeeks : null;
+  const dailyCap = p => p.dailyCapacity ?? p.weeklyCapacity;   // old cached payloads
+  const capRange = p => dailyCap(p) ? Math.round(dailyCap(p) * bizDays) : null;
 
   // KPI row (counts only what the current view shows)
   const totShoots = shown.reduce((s,p)=>s+segShoots(p),0);
   const totErr = shown.reduce((s,p)=>s+p.errors,0);
   // team utilization uses ONLY shooters with a capacity set, so unset rows
   // can't drag the percentage down
-  const capped = shown.filter(p=>p.weeklyCapacity);
+  const capped = shown.filter(p=>dailyCap(p));
   const teamCap = capped.reduce((s,p)=>s+capRange(p),0);
   const teamShot = capped.reduce((s,p)=>s+segShoots(p),0);
   document.getElementById('teamKpis').innerHTML = [
     ['Shoots ('+seg+')', totShoots],
+    ['Business Days', bizDays],
     ['Team Capacity', teamCap||'—'],
     ['Team Utilization', teamCap?((teamShot/teamCap)*100).toFixed(1)+'%':'—'],
     ['Residential', shown.reduce((s,p)=>s+p.residential,0)],
@@ -840,16 +853,20 @@ function renderTeam(){
     ['Capacities Set', `${d.capacitiesSet}/${d.photographers.length}`],
   ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
 
-  // weeks per period (calendar Mondays between range.from and range.to)
-  const weeksIn = {};
+  // business days per period; each day is bucketed by ITS WEEK'S MONDAY so
+  // the denominator lines up with byPP, whose shoots are keyed the same way
+  const bizIn = {};
   {
     let cur = new Date(d.range.from+'T00:00:00Z');
-    cur.setUTCDate(cur.getUTCDate() - ((cur.getUTCDay()+6)%7));   // back to Monday
     const end = new Date(d.range.to+'T00:00:00Z');
     while(cur <= end){
-      const k = periodKey(cur.toISOString().slice(0,10), mode);
-      weeksIn[k] = (weeksIn[k]||0)+1;
-      cur.setUTCDate(cur.getUTCDate()+7);
+      const dow = (cur.getUTCDay()+6)%7;   // 0 = Monday
+      if(dow < 5){
+        const mon = new Date(cur); mon.setUTCDate(mon.getUTCDate()-dow);
+        const k = periodKey(mon.toISOString().slice(0,10), mode);
+        bizIn[k] = (bizIn[k]||0)+1;
+      }
+      cur.setUTCDate(cur.getUTCDate()+1);
     }
   }
 
@@ -861,13 +878,13 @@ function renderTeam(){
     byPP[k][w.photographer] = (byPP[k][w.photographer]||0) + pick(w);
   });
   const periods = Object.keys(byPP).sort();
-  const caps = Object.fromEntries(d.photographers.map(p=>[p.name, p.weeklyCapacity]));
+  const caps = Object.fromEntries(d.photographers.map(p=>[p.name, dailyCap(p)]));
   const anyCaps = d.capacitiesSet > 0;
   const names = shown.filter(p=>p.name!=='Unassigned').map(p=>p.name).slice(0,8);
 
   document.getElementById('teamChartTitle').textContent = anyCaps
-    ? `Photographer Utilization by ${mode} (${seg})`
-    : `Shoots by ${mode} (${seg}) — set weekly capacities in the photographer_capacity sheet to see utilization %`;
+    ? `Photographer Utilization by ${mode} (${seg}) — shoots / (daily cap × business days)`
+    : `Shoots by ${mode} (${seg}) — set shoots-per-business-day capacities in the photographer_capacity sheet to see utilization %`;
 
   Object.values(teamCharts).forEach(c=>c.destroy());
   teamCharts = {};
@@ -879,7 +896,7 @@ function renderTeam(){
       data:periods.map(k=>{
         const shoots = (byPP[k]||{})[n]||0;
         const cap = caps[n];
-        return (anyCaps && cap) ? +(100*shoots/(cap*weeksIn[k])).toFixed(1) : shoots;
+        return (anyCaps && cap && bizIn[k]) ? +(100*shoots/(cap*bizIn[k])).toFixed(1) : shoots;
       }),
     }))},
     options:{ responsive:true, scales:{y:{beginAtZero:true,
@@ -896,7 +913,7 @@ function renderTeam(){
       <td>${esc(p.name)}</td>
       <td class="${p.segment==='unknown'?'muted':''}">${p.segment==='unknown'?'label in sheet':esc(p.segment)}</td>
       <td>${segShoots(p)}</td>
-      <td class="${cap?'':'muted'}">${cap?`${segShoots(p)} of ${cap}`:'set weekly cap'}</td>
+      <td class="${cap?'':'muted'}">${cap?`${segShoots(p)} of ${cap}`:'set daily cap'}</td>
       <td class="${util!=null && util<0.5?'muted':''}">${util==null?'—':(util*100).toFixed(1)+'%'}</td>
       <td>${p.residential}</td><td>${p.commercial}</td>
       <td>${p.errors}</td>
@@ -921,55 +938,75 @@ async function loadHome(){
   S.homeLoaded = true;
   const note = document.getElementById('homeNote');
   note.textContent = 'Loading…';
+  const seg = document.getElementById('homeSegment')?.value || 'all';
   let d;
-  try{ d = await api('/api/reports/home?'+(rangeQS('home')||'')); }
+  try{ d = await api('/api/reports/home?'+(rangeQS('home')||'')+(seg!=='all'?'&segment='+seg:'')); }
   catch(e){ note.textContent = 'Could not load: '+e.message; return; }
   note.textContent = '';
   const t = d.tiles || {};
+  const segOn = seg !== 'all';
+  // when a segment is selected, tiles whose source has no res/com dimension
+  // (QBO, GHL) stay whole-business: dimmed + tagged so they can't be misread
+  const wb = segOn ? '<div class="tile-goal wb-tag">whole business</div>' : '';
+  const dimCls = segOn ? ' tile-dim' : '';
 
-  function goalTile(label, g, fmt, tab){
+  function goalTile(label, g, fmt, tab, aware, sub){
     if(!g || g.value==null) return '';
+    const dim = (segOn && !aware) ? ' tile-dim' : '';
+    const tag = (segOn && !aware) ? wb : '';
+    if(g.goalTotal==null)   // segment view: plain value, no whole-business goal bar
+      return `<div class="stat tile${dim}" onclick="gotoTab('${tab}')">
+        <div class="stat-lbl">${label}</div>
+        <div class="stat-val">${fmt(g.value)}</div>
+        ${sub?`<div class="tile-goal">${sub}</div>`:''}${tag}
+      </div>`;
     const pace = g.pace, pct = Math.min(140, Math.round((pace||0)*100));
     const cls = pace==null ? '' : pace >= 1 ? 'ahead' : pace >= 0.85 ? '' : 'behind';
-    return `<div class="stat tile" onclick="gotoTab('${tab}')">
+    return `<div class="stat tile${dim}" onclick="gotoTab('${tab}')">
       <div class="stat-lbl">${label}</div>
       <div class="stat-val">${fmt(g.value)}</div>
       <div class="tile-bar"><span class="${cls}" style="width:${pct}%"></span></div>
-      <div class="tile-goal">${fmt(g.expectedByNow)} expected by now · range goal ${fmt(g.goalTotal)}</div>
+      <div class="tile-goal">${fmt(g.expectedByNow)} expected by now · range goal ${fmt(g.goalTotal)}</div>${tag}
     </div>`;
   }
-  function tile(label, val, tab, sub){
+  function tile(label, val, tab, sub, aware){
     if(val==null || val==='—') return '';
-    return `<div class="stat tile" onclick="gotoTab('${tab}')">
+    const dim = (segOn && !aware) ? ' tile-dim' : '';
+    const tag = (segOn && !aware) ? wb : '';
+    return `<div class="stat tile${dim}" onclick="gotoTab('${tab}')">
       <div class="stat-lbl">${label}</div>
       <div class="stat-val">${val}</div>
-      ${sub?`<div class="tile-goal">${sub}</div>`:''}
+      ${sub?`<div class="tile-goal">${sub}</div>`:''}${tag}
     </div>`;
   }
 
+  const segLbl = seg==='commercial' ? 'commercial' : seg==='residential' ? 'residential' : '';
   const parts = [];
-  parts.push(goalTile('Revenue', t.revenue, fmtMoney, 'finance'));
+  parts.push(goalTile('Revenue', t.revenue, fmtMoney, 'finance', true,
+                      segOn?`Spiro booked · ${segLbl}`:'Spiro booked'));
   if(t.netProfit!=null)
-    parts.push(tile('Net Profit', fmtMoney(t.netProfit), 'finance',
-                    t.netMargin!=null?fmtPct(t.netMargin)+' net margin':''));
+    parts.push(tile('Net Profit', fmtMoney(t.netProfit), 'finance', 'QuickBooks'));
+  if(t.netMargin!=null)
+    parts.push(tile('Net Margin', fmtPct(t.netMargin), 'finance', 'net profit / income'));
   if(t.cash && t.cash.cash!=null)
     parts.push(tile('Cash on Hand', fmtMoney(t.cash.cash), 'finance',
                     `${fmtMoney(t.cash.bankTotal)} bank − ${fmtMoney(t.cash.creditCardTotal)} cards`));
-  parts.push(goalTile('New Clients', t.newClients, v=>Math.round(v), 'marketing'));
+  parts.push(goalTile('New Clients', t.newClients, v=>Math.round(v), 'marketing', false));
   parts.push(tile('Raw CAC', t.cacRaw!=null?fmtMoney(t.cacRaw):null, 'marketing', 'all spend / all new clients'));
   parts.push(tile('Won CAC', t.cacWon!=null?fmtMoney(t.cacWon):null, 'marketing', 'all spend / won clients'));
-  parts.push(tile('AOV', t.aov!=null?fmtMoney(t.aov):null, 'finance', 'Spiro revenue / orders'));
+  parts.push(tile('AOV', t.aov!=null?fmtMoney(t.aov):null, 'finance',
+                  segOn?`Spiro · ${segLbl}`:'Spiro revenue / orders', true));
   parts.push(tile('LTV : CAC', t.ltvCac!=null?t.ltvCac.toFixed(1)+' : 1':null, 'marketing'));
   parts.push(tile('Repeat Rate (180d)', t.repeatRate180!=null?fmtPct(t.repeatRate180):null, 'marketing', 'windowed, add-ons excluded'));
-  parts.push(tile('Shoots', t.shoots, 'jobs', `${d.range.from} → ${d.range.to}`));
+  parts.push(tile('Shoots', t.shoots, 'jobs', `${d.range.from} → ${d.range.to}`, true));
   if(t.needsReply)
     parts.push(tile('Needs Reply', t.needsReply.total, 'marketing',
                     t.needsReply.hot?`<span class="tile-hot">${t.needsReply.hot} buying signals</span>`:'inbox clear'));
-  parts.push(tile('On-site Errors', t.onsiteErrors==null?'—':t.onsiteErrors, 'team', 'from Jobs-tab error notes'));
+  parts.push(tile('On-site Errors', t.onsiteErrors==null?'—':t.onsiteErrors, 'team', 'from Jobs-tab error notes', true));
 
   document.getElementById('homeTiles').innerHTML = parts.filter(Boolean).join('');
   document.getElementById('homeMeta').textContent =
-    `${d.range.from} → ${d.range.to} · updated ${d.generatedAt}`;
+    `${d.range.from} → ${d.range.to}${segOn?' · '+segLbl+' only (dimmed tiles are whole business)':''} · updated ${d.generatedAt}`;
 
   // ── charts ──
   const ch = d.charts || {};
@@ -979,21 +1016,29 @@ async function loadHome(){
   document.getElementById('homeCharts').style.display = any ? '' : 'none';
 
   if(ch.revenueYtd){
-    document.getElementById('cardRevYtd').style.display = '';
+    const card = document.getElementById('cardRevYtd');
+    card.style.display = '';
+    card.querySelector('.ins-card-title').textContent = segOn
+      ? `Spiro Revenue — ${segLbl} (selected range)`
+      : 'Spiro Revenue vs $1M-Pace Goal (selected range)';
     const r = ch.revenueYtd;
+    const ds = [
+      {type:'bar', label:'Monthly Revenue', data:r.income, backgroundColor:'#7B93A3'},
+      {type:'line', label:'Cumulative', data:r.cumulative, borderColor:'#637d90',
+       backgroundColor:'rgba(99,125,144,0.12)', fill:true, tension:0.3},
+    ];
+    if(r.goalCumulative)
+      ds.push({type:'line', label:'$1M Pace', data:r.goalCumulative, borderColor:'#C0392B',
+               borderDash:[6,4], pointRadius:0, fill:false});
     homeCharts.rev = new Chart(document.getElementById('chRevYtd'), {
-      data:{ labels:r.months, datasets:[
-        {type:'bar', label:'Monthly Income', data:r.income, backgroundColor:'#7B93A3'},
-        {type:'line', label:'Cumulative', data:r.cumulative, borderColor:'#637d90',
-         backgroundColor:'rgba(99,125,144,0.12)', fill:true, tension:0.3},
-        {type:'line', label:'$1M Pace', data:r.goalCumulative, borderColor:'#C0392B',
-         borderDash:[6,4], pointRadius:0, fill:false},
-      ]},
+      data:{ labels:r.months, datasets:ds },
       options:{ responsive:true, scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}} }
     });
-  }
+  } else { document.getElementById('cardRevYtd').style.display = 'none'; }
   if(ch.cashByMonth){
-    document.getElementById('cardCash').style.display = '';
+    const cashCard = document.getElementById('cardCash');
+    cashCard.style.display = '';
+    cashCard.style.opacity = segOn ? .45 : 1;   // cash is whole-business
     const c = ch.cashByMonth;
     homeCharts.cash = new Chart(document.getElementById('chCash'), {
       data:{ labels:c.months, datasets:[
@@ -1006,7 +1051,10 @@ async function loadHome(){
     });
   }
   if(ch.shootsByMonth){
-    document.getElementById('cardShoots').style.display = '';
+    const shootsCard = document.getElementById('cardShoots');
+    shootsCard.style.display = '';
+    shootsCard.querySelector('.ins-card-title').textContent =
+      segOn ? `Shoots per Month — ${segLbl}` : 'Shoots per Month';
     const s = ch.shootsByMonth;
     homeCharts.shoots = new Chart(document.getElementById('chShoots'), {
       type:'bar',
