@@ -748,15 +748,19 @@ function rangeDates(tab){
   const y = now.getFullYear(), mo = now.getMonth();
   const monday = off => { const d = new Date(now); d.setDate(now.getDate()-((now.getDay()+6)%7)+off); return d; };
   const qs = Math.floor(mo/3)*3;
+  // Current-period presets send the FULL calendar period (This Month = Jul 1 →
+  // Jul 31, not Jul 1 → today) so capacity math can count every business day
+  // in the period (Brett 2026-07-14). The backend clamps DATA at today anyway,
+  // so numbers never include the future — only capacity denominators do.
   let from, to = now;
   switch(v){
-    case 'tw': from = monday(0); break;
+    case 'tw': from = monday(0); to = monday(6); break;
     case 'lw': from = monday(-7); to = monday(-1); break;
-    case 'tm': from = new Date(y, mo, 1); break;
+    case 'tm': from = new Date(y, mo, 1); to = new Date(y, mo+1, 0); break;
     case 'lm': from = new Date(y, mo-1, 1); to = new Date(y, mo, 0); break;
-    case 'tq': from = new Date(y, qs, 1); break;
+    case 'tq': from = new Date(y, qs, 1); to = new Date(y, qs+3, 0); break;
     case 'lq': from = new Date(y, qs-3, 1); to = new Date(y, qs, 0); break;
-    case 'ty': from = new Date(y, 0, 1); break;
+    case 'ty': from = new Date(y, 0, 1); to = new Date(y, 11, 31); break;
     case 'ly': from = new Date(y-1, 0, 1); to = new Date(y-1, 11, 31); break;
     case 'm12': from = new Date(y, mo-11, 1); break;
     default: from = new Date(y, mo-11, 1);
@@ -820,15 +824,16 @@ function renderTeam(){
   const shownNames = new Set(shown.map(p=>p.name));
 
   // total capacity for the range = DAILY capacity x business days (Mon-Fri)
-  // in the range (Brett 2026-07-14: business days, not weeks, so partial
-  // months grade fairly)
-  let bizDays = d.range.businessDays;
-  if(bizDays==null){   // fallback if the API response predates businessDays
-    bizDays = 0;
-    let cur = new Date(d.range.from+'T00:00:00Z');
-    const endD = new Date(d.range.to+'T00:00:00Z');
-    while(cur <= endD){ if(((cur.getUTCDay()+6)%7)<5) bizDays++; cur.setUTCDate(cur.getUTCDate()+1); }
-  }
+  // across the FULL selected period — including days still ahead (Brett
+  // 2026-07-14: This Week is always 5 business days, July is always 23).
+  // Computed locally from the range control because the API's range.to is
+  // clamped at today for data purposes.
+  const rd = rangeDates('team');
+  const periodTo = (rd && rd.to) || d.range.requestedTo || d.range.to;
+  let bizDays = 0;
+  { let cur = new Date(d.range.from+'T00:00:00Z');
+    const endD = new Date(periodTo+'T00:00:00Z');
+    while(cur <= endD){ if(((cur.getUTCDay()+6)%7)<5) bizDays++; cur.setUTCDate(cur.getUTCDate()+1); } }
   const segShoots = p => seg==='all' ? p.shoots : p[seg];
   const dailyCap = p => p.dailyCapacity ?? p.weeklyCapacity;   // old cached payloads
   const capRange = p => dailyCap(p) ? Math.round(dailyCap(p) * bizDays) : null;
@@ -854,11 +859,13 @@ function renderTeam(){
   ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
 
   // business days per period; each day is bucketed by ITS WEEK'S MONDAY so
-  // the denominator lines up with byPP, whose shoots are keyed the same way
+  // the denominator lines up with byPP, whose shoots are keyed the same way.
+  // Runs to the FULL period end so the current week/month grades against all
+  // of its business days, not just the elapsed ones.
   const bizIn = {};
   {
     let cur = new Date(d.range.from+'T00:00:00Z');
-    const end = new Date(d.range.to+'T00:00:00Z');
+    const end = new Date(periodTo+'T00:00:00Z');
     while(cur <= end){
       const dow = (cur.getUTCDay()+6)%7;   // 0 = Monday
       if(dow < 5){
