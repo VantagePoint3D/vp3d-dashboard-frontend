@@ -812,11 +812,27 @@ function renderTeam(){
   const shown = d.photographers.filter(inSeg);
   const shownNames = new Set(shown.map(p=>p.name));
 
+  // total capacity for the range = weekly capacity x weeks in range
+  let rangeWeeks = 0;
+  { let cur = new Date(d.range.from+'T00:00:00Z');
+    cur.setUTCDate(cur.getUTCDate()-((cur.getUTCDay()+6)%7));
+    const endD = new Date(d.range.to+'T00:00:00Z');
+    while(cur <= endD){ rangeWeeks++; cur.setUTCDate(cur.getUTCDate()+7); } }
+  const segShoots = p => seg==='all' ? p.shoots : p[seg];
+  const capRange = p => p.weeklyCapacity ? p.weeklyCapacity * rangeWeeks : null;
+
   // KPI row (counts only what the current view shows)
-  const totShoots = shown.reduce((s,p)=>s+(seg==='all'?p.shoots:p[seg]),0);
+  const totShoots = shown.reduce((s,p)=>s+segShoots(p),0);
   const totErr = shown.reduce((s,p)=>s+p.errors,0);
+  // team utilization uses ONLY shooters with a capacity set, so unset rows
+  // can't drag the percentage down
+  const capped = shown.filter(p=>p.weeklyCapacity);
+  const teamCap = capped.reduce((s,p)=>s+capRange(p),0);
+  const teamShot = capped.reduce((s,p)=>s+segShoots(p),0);
   document.getElementById('teamKpis').innerHTML = [
     ['Shoots ('+seg+')', totShoots],
+    ['Team Capacity', teamCap||'—'],
+    ['Team Utilization', teamCap?((teamShot/teamCap)*100).toFixed(1)+'%':'—'],
     ['Residential', shown.reduce((s,p)=>s+p.residential,0)],
     ['Commercial', shown.reduce((s,p)=>s+p.commercial,0)],
     ['On-site Errors', totErr],
@@ -872,15 +888,20 @@ function renderTeam(){
 
   // roster table
   document.getElementById('teamRoster').innerHTML =
-    '<tr><th>Photographer</th><th>Segment</th><th>Shoots</th><th>Residential</th><th>Commercial</th><th>Weekly Capacity</th><th>Errors</th><th>Error Rate</th></tr>' +
-    shown.map(p=>`<tr>
+    `<tr><th>Photographer</th><th>Segment</th><th>Shoots (${seg})</th><th>Capacity (range)</th><th>Utilization</th><th>Residential</th><th>Commercial</th><th>Errors</th><th>Error Rate</th></tr>` +
+    shown.map(p=>{
+      const cap = capRange(p);
+      const util = cap ? segShoots(p)/cap : null;
+      return `<tr>
       <td>${esc(p.name)}</td>
       <td class="${p.segment==='unknown'?'muted':''}">${p.segment==='unknown'?'label in sheet':esc(p.segment)}</td>
-      <td>${p.shoots}</td><td>${p.residential}</td><td>${p.commercial}</td>
-      <td class="${p.weeklyCapacity?'':'muted'}">${p.weeklyCapacity||'set in sheet'}</td>
+      <td>${segShoots(p)}</td>
+      <td class="${cap?'':'muted'}">${cap?`${segShoots(p)} of ${cap}`:'set weekly cap'}</td>
+      <td class="${util!=null && util<0.5?'muted':''}">${util==null?'—':(util*100).toFixed(1)+'%'}</td>
+      <td>${p.residential}</td><td>${p.commercial}</td>
       <td>${p.errors}</td>
       <td class="${p.errorRate>0.05?'tile-hot':''}">${p.errorRate==null?'—':(p.errorRate*100).toFixed(1)+'%'}</td>
-    </tr>`).join('');
+    </tr>`;}).join('');
 
   // error log
   const el = document.getElementById('teamErrors');
@@ -937,6 +958,7 @@ async function loadHome(){
   parts.push(goalTile('New Clients', t.newClients, v=>Math.round(v), 'marketing'));
   parts.push(tile('Raw CAC', t.cacRaw!=null?fmtMoney(t.cacRaw):null, 'marketing', 'all spend / all new clients'));
   parts.push(tile('Won CAC', t.cacWon!=null?fmtMoney(t.cacWon):null, 'marketing', 'all spend / won clients'));
+  parts.push(tile('AOV', t.aov!=null?fmtMoney(t.aov):null, 'finance', 'Spiro revenue / orders'));
   parts.push(tile('LTV : CAC', t.ltvCac!=null?t.ltvCac.toFixed(1)+' : 1':null, 'marketing'));
   parts.push(tile('Repeat Rate (180d)', t.repeatRate180!=null?fmtPct(t.repeatRate180):null, 'marketing', 'windowed, add-ons excluded'));
   parts.push(tile('Shoots', t.shoots, 'jobs', `${d.range.from} → ${d.range.to}`));
@@ -1170,16 +1192,31 @@ async function loadFinance(force){
   btn.style.display = 'none';
   note.textContent = '';
   const k = d.kpis;
-  // COGS is mostly contractor pay (Subcontracted Services) — the parser now reads
-  // it, so Expenses = COGS + Operating and the margin is finally real.
-  document.getElementById('finKpis').innerHTML = [
-    ['Income', fmtMoney(k.income)],
+  // Two income tiles on purpose: QuickBooks = what the books collected,
+  // Spiro = what was booked. The gap between them is timing + uninvoiced work.
+  const finCards = [
+    ['Income (QuickBooks)', fmtMoney(k.income)],
+    ['Income (Spiro booked)', k.spiroIncome!=null?fmtMoney(k.spiroIncome):'—'],
+    ['AOV', k.aov!=null?fmtMoney(k.aov):'—'],
     ['COGS (incl. contractors)', fmtMoney(k.cogs)],
     ['Gross Profit', `${fmtMoney(k.grossProfit)} <span class="stat-sub">${fmtPct(k.grossMargin)}</span>`],
     ['Operating Exp', fmtMoney(k.opex)],
     ['Net Profit', fmtMoney(k.netProfit)],
     ['Net Margin', fmtPct(k.margin)],
-  ].map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
+    ['Bank', k.bankTotal!=null?fmtMoney(k.bankTotal):'—'],
+    ['Credit Cards', k.creditCardTotal!=null?fmtMoney(k.creditCardTotal):'—'],
+    ['Cash on Hand', k.cash!=null?fmtMoney(k.cash):'—'],
+  ];
+  const cf = d.cashflow;
+  if(cf && cf.avgMonthlyChange!=null){
+    finCards.push(['Cash Flow / mo', (cf.avgMonthlyChange>=0?'+':'−')+fmtMoney(Math.abs(cf.avgMonthlyChange))]);
+    finCards.push(['Cash in 30/60/90d',
+      `<span style="font-size:15px">${fmtMoney(cf.projected30)} / ${fmtMoney(cf.projected60)} / ${fmtMoney(cf.projected90)}</span>`]);
+  }
+  const fk = document.getElementById('finKpis');
+  fk.style.flexWrap = 'wrap';
+  fk.innerHTML = finCards
+    .map(([l,v])=>`<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${v}</div></div>`).join('');
 
   Object.values(finCharts).forEach(c=>c.destroy());
   finCharts = {};
