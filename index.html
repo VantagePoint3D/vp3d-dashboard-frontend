@@ -986,15 +986,31 @@ async function loadHome(){
       ${sub?`<div class="tile-goal">${sub}</div>`:''}${tag}
     </div>`;
   }
+  // A tile that deliberately has no number, with the reason in place of one.
+  // Not clickable: there is nothing to drill into.
+  function mutedTile(label, val, sub){
+    return `<div class="stat tile tile-dim">
+      <div class="stat-lbl">${label}</div>
+      <div class="stat-val" style="opacity:.55">${val}</div>
+      ${sub?`<div class="tile-goal">${sub}</div>`:''}
+    </div>`;
+  }
 
   const segLbl = seg==='commercial' ? 'commercial' : seg==='residential' ? 'residential' : '';
   const parts = [];
   parts.push(goalTile('Revenue', t.revenue, fmtMoney, 'finance', true,
                       segOn?`Spiro booked · ${segLbl}`:'Spiro booked'));
+  // Net profit / margin are withheld below MIN_PNL_DAYS (backend sends
+  // tiles.pnlSuppressed instead). QBO income and costs post on different
+  // schedules, so a sub-monthly ratio is timing noise, not margin. Show the
+  // reason rather than silently dropping two tiles. (Brett 2026-08-04)
   if(t.netProfit!=null)
     parts.push(tile('Net Profit', fmtMoney(t.netProfit), 'finance', 'QuickBooks'));
   if(t.netMargin!=null)
     parts.push(tile('Net Margin', fmtPct(t.netMargin), 'finance', 'net profit / income'));
+  else if(t.pnlSuppressed)
+    parts.push(mutedTile('Net Profit & Margin', 'needs a month',
+                         `range is ${t.pnlSuppressed.rangeDays}d · QuickBooks costs post lumpy, so a shorter window reads as noise`));
   if(t.cash && t.cash.cash!=null)
     parts.push(tile('Cash on Hand', fmtMoney(t.cash.cash), 'finance',
                     `${fmtMoney(t.cash.bankTotal)} bank − ${fmtMoney(t.cash.creditCardTotal)} cards`));
@@ -1006,9 +1022,14 @@ async function loadHome(){
   parts.push(tile('LTV : CAC', t.ltvCac!=null?t.ltvCac.toFixed(1)+' : 1':null, 'marketing'));
   parts.push(tile('Repeat Rate (180d)', t.repeatRate180!=null?fmtPct(t.repeatRate180):null, 'marketing', 'windowed, add-ons excluded'));
   parts.push(tile('Shoots', t.shoots, 'jobs', `${d.range.from} → ${d.range.to}`, true));
+  // Needs Reply is an OPEN BACKLOG, not a range measure — same class as Cash on
+  // Hand. It looked broken because it never changed with the date selector, but
+  // date-filtering it would hide the oldest unanswered leads, which are exactly
+  // the ones that matter. So it stays all-time and says so. (Brett 2026-08-04)
   if(t.needsReply)
     parts.push(tile('Needs Reply', t.needsReply.total, 'marketing',
-                    t.needsReply.hot?`<span class="tile-hot">${t.needsReply.hot} buying signals</span>`:'inbox clear'));
+                    (t.needsReply.hot?`<span class="tile-hot">${t.needsReply.hot} buying signals</span> · `:'')
+                    + 'open backlog · all time, not this range'));
   parts.push(tile('On-site Errors', t.onsiteErrors==null?'—':t.onsiteErrors, 'team', 'from Jobs-tab error notes', true));
 
   document.getElementById('homeTiles').innerHTML = parts.filter(Boolean).join('');
