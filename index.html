@@ -1757,9 +1757,30 @@ async function doLoad(){
     // The per-id fallback stays so the frontend can deploy before the backend
     // without blanking the Order column. (Brett 2026-08-04)
     const ids=[...new Set(S.appts.map(a=>a.orderId))].filter(Boolean);
+
+    // Orders and media are INDEPENDENT lookups, so start both before awaiting
+    // either. They used to run back to back — measured 2026-08-04, orders
+    // finished at 12:34:10.551 and media only began at 12:34:10.674, so the
+    // 2.8s media leg was pure dead time stacked on the 4.8s orders leg.
+    // .catch attached at creation, not at the await: an in-flight rejection
+    // while we're awaiting orders would otherwise surface as an unhandled
+    // rejection, and awaiting it bare below would replace the whole table with
+    // the error banner over nothing worse than missing photo counts.
+    // Safe to overlap with patchRow: rowHtml() reads S.media, and paintMedia is
+    // synchronous from DOM query to write, so neither can clobber the other.
+    const mediaDone = loadMedia(S.appts.slice())
+      .catch(e=>console.warn('media load failed, counts will show as —:', e.message));
+
     try{
       const res=await api('/api/orders/batch',{method:'POST',body:JSON.stringify({ids})});
       const got=res.orders||{};
+      // Surface partial failures. The batch deliberately returns null for an id
+      // it could not read rather than failing the page, which means a
+      // rate-limited or broken lookup would otherwise show up as a blank cell
+      // and nothing else. This codebase has been bitten by silent failures
+      // before — say it out loud.
+      if(res.failed?.length)
+        console.warn(`orders batch: ${res.failed.length}/${res.requested} could not be read`, res.failed);
       for(const id of ids){
         const _or=got[id]??null;
         S.orders[id]=(_or && 'data' in _or && 'meta' in _or)?_or.data:_or;
@@ -1771,7 +1792,7 @@ async function doLoad(){
     }
     refreshStats();
 
-    loadMedia(S.appts.slice());
+    await mediaDone;
 
   }catch(e){
     document.getElementById('tbody').innerHTML=`<tr><td colspan="15"><div class="center-state" style="color:var(--red)">Error: ${esc(e.message)}<br><button class="btn-primary" style="margin-top:12px" onclick="doLoad()">Retry</button></div></td></tr>`;
