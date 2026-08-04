@@ -1750,13 +1750,24 @@ async function doLoad(){
     sortAppts();
     refreshTable();
 
-    // Load orders in batches of 4
-    const ids=[...new Set(S.appts.map(a=>a.orderId))];
-    for(let i=0;i<ids.length;i+=4){
-      await Promise.all(ids.slice(i,i+4).map(async id=>{
-        try{const _or=await api(`/api/orders/${id}`);S.orders[id]=('data' in _or && 'meta' in _or)?_or.data:_or;}catch{S.orders[id]=null;}
+    // ONE request for every order on the page. This used to be awaited waves of
+    // 4, which on a 34-row page meant 9 sequential round trips at ~991ms each,
+    // about 9 seconds of pure latency while the server sat idle. The backend
+    // now fans out to Spiro itself with its own concurrency cap.
+    // The per-id fallback stays so the frontend can deploy before the backend
+    // without blanking the Order column. (Brett 2026-08-04)
+    const ids=[...new Set(S.appts.map(a=>a.orderId))].filter(Boolean);
+    try{
+      const res=await api('/api/orders/batch',{method:'POST',body:JSON.stringify({ids})});
+      const got=res.orders||{};
+      for(const id of ids){
+        const _or=got[id]??null;
+        S.orders[id]=(_or && 'data' in _or && 'meta' in _or)?_or.data:_or;
         patchRow(id);
-      }));
+      }
+    }catch(e){
+      console.warn('orders batch unavailable, falling back to per-id:',e.message);
+      await loadOrdersPerId(ids);
     }
     refreshStats();
 
@@ -1769,17 +1780,44 @@ async function doLoad(){
   document.getElementById('refreshBtn').disabled=false;
 }
 
+// Fallback path only — used when the backend has no /api/orders/batch yet.
+// Wider windows than the original 4: the container is nowhere near saturated
+// (CPU measured at 0.01% of 8 cores), so the old width bought nothing.
+async function loadOrdersPerId(ids){
+  for(let i=0;i<ids.length;i+=12){
+    await Promise.all(ids.slice(i,i+12).map(async id=>{
+      try{const _or=await api(`/api/orders/${id}`);S.orders[id]=('data' in _or && 'meta' in _or)?_or.data:_or;}catch{S.orders[id]=null;}
+      patchRow(id);
+    }));
+  }
+}
+
+function paintMedia(orderId){
+  const tr=document.querySelector(`tr[data-order="${orderId}"]`);
+  if(!tr) return;
+  const cells=tr.querySelectorAll('td');
+  const m=S.media[orderId]||{};
+  if(cells[5])cells[5].innerHTML=`<span class="num-big">${m.photos??'—'}</span>`;
+  if(cells[6])cells[6].innerHTML=`<span class="num-big">${m.videos??'—'}</span>`;
+}
+
 async function loadMedia(appts){
-  for(let i=0;i<appts.length;i+=3){
-    await Promise.all(appts.slice(i,i+3).map(async appt=>{
-      try{S.media[appt.orderId]=await api(`/api/media/${appt.orderId}`);}catch{S.media[appt.orderId]={photos:null,videos:null};}
-      const tr=document.querySelector(`tr[data-order="${appt.orderId}"]`);
-      if(tr){
-        const cells=tr.querySelectorAll('td');
-        const m=S.media[appt.orderId];
-        if(cells[5])cells[5].innerHTML=`<span class="num-big">${m.photos??'—'}</span>`;
-        if(cells[6])cells[6].innerHTML=`<span class="num-big">${m.videos??'—'}</span>`;
-      }
+  const ids=[...new Set(appts.map(a=>a.orderId))].filter(Boolean);
+  if(!ids.length) return;
+  // Same story as orders: 34 media lookups in awaited waves of 3 was 12 round
+  // trips for data one request can carry.
+  try{
+    const res=await api('/api/media/batch',{method:'POST',body:JSON.stringify({ids})});
+    const got=res.media||{};
+    ids.forEach(id=>{ S.media[id]=got[id]||{photos:null,videos:null}; paintMedia(id); });
+    return;
+  }catch(e){
+    console.warn('media batch unavailable, falling back to per-id:',e.message);
+  }
+  for(let i=0;i<ids.length;i+=12){
+    await Promise.all(ids.slice(i,i+12).map(async id=>{
+      try{S.media[id]=await api(`/api/media/${id}`);}catch{S.media[id]={photos:null,videos:null};}
+      paintMedia(id);
     }));
   }
 }
