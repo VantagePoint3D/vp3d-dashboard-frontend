@@ -99,26 +99,33 @@ html,body{height:100%;font-family:var(--font-body);background:var(--bg);color:va
 .page.active{display:block}
 /* Plan tab */
 .pl-owner{padding:0 24px}
-.pl-owner-name{font-family:var(--font-body);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--g500);margin:20px 0 8px}
+.pl-owner-name{font-family:var(--font-body);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--black);margin:20px 0 8px}
 .pl-card{background:var(--white);border:1px solid var(--g200);border-radius:3px;padding:14px 16px;margin-bottom:10px}
 .pl-card.pl-master{border-left:3px solid var(--denim)}
 .pl-card-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.pl-rank{font-size:10px;font-weight:700;letter-spacing:0.06em;color:var(--denim);text-transform:uppercase;white-space:nowrap}
-.pl-name{font-size:15px;font-weight:600}
-.pl-due{margin-left:auto;font-size:12px;color:var(--g500);white-space:nowrap}
-.pl-note{font-size:12px;line-height:1.45;margin-top:4px}
-.pl-tasks{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
-.pl-tasks th{text-align:left;padding:6px 8px;background:var(--g100);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--g500);font-weight:600}
-.pl-tasks td{padding:7px 8px;border-top:1px solid var(--g100);vertical-align:top}
-.pl-pill{display:inline-block;padding:1px 7px;border-radius:2px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap}
-.pl-blocked{background:#fdf0ec;color:#a8402a}
-.pl-progress{background:#e6eef4;color:#35586e}
-.pl-todo{background:var(--g100);color:var(--g500)}
-.pl-done{background:#e4efe4;color:#2f6b2f}
+.pl-rank{font-size:11px;font-weight:700;letter-spacing:0.06em;color:var(--denim);text-transform:uppercase;white-space:nowrap}
+.pl-name{font-size:16px;font-weight:600;color:var(--black)}
+.pl-due{margin-left:auto;font-size:13px;color:var(--black);white-space:nowrap}
+.pl-tasks{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px;color:var(--black)}
+.pl-tasks th{text-align:left;padding:6px 8px;background:var(--g100);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--black);font-weight:600}
+.pl-tasks td{padding:7px 8px;border-top:1px solid var(--g100);vertical-align:top;color:var(--black)}
+.pl-pill{display:inline-block;padding:1px 7px;border-radius:2px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap}
+.pl-blocked{background:#fdf0ec;color:#8f2f1c}
+.pl-progress{background:#e6eef4;color:#24475c}
+.pl-todo{background:var(--g100);color:var(--black)}
+.pl-done{background:#e4efe4;color:#215021}
 .pl-sec{padding:0 24px;margin-top:22px}
-.pl-sec-title{font-family:var(--font-body);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--g500);margin-bottom:6px}
-.pl-ul{margin:8px 0 0;padding-left:20px;font-size:13px}
+.pl-sec-title{font-family:var(--font-body);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--black);margin-bottom:6px}
+.pl-ul{margin:8px 0 0;padding-left:20px;font-size:14px;color:var(--black)}
 .pl-ul li{margin-bottom:8px}
+/* The global .muted rule (color:var(--g300); font-size:10px) sits LATER in this
+   stylesheet than the .pl-* block, so it was winning on both colour and size and
+   rendering every note at 10px in the lightest grey in the palette — unreadable.
+   These ID-scoped rules beat it on specificity regardless of order, and they are
+   scoped to #page-plan so no other tab's .muted styling changes. */
+#page-plan .muted,
+#page-plan .pl-note{color:var(--black);font-size:13px;line-height:1.5}
+#page-plan .pl-note{margin-top:4px}
 
 /* ── COMING SOON ──────────────────────────────────────── */
 .soon-page{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;color:var(--g400);gap:12px}
