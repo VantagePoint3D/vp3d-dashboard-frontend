@@ -97,6 +97,11 @@ html,body{height:100%;font-family:var(--font-body);background:var(--bg);color:va
 /* ── PAGES ────────────────────────────────────────────── */
 .page{display:none}
 .page.active{display:block}
+/* partial-load warning banner (Jobs) */
+.partial-warn{margin:12px 24px 0;padding:10px 14px;border-radius:3px;font-size:13px;
+  background:#fdf0ec;color:#8f2f1c;border-left:4px solid #8f2f1c}
+.partial-warn b{font-weight:700}
+.partial-ids{text-decoration:underline dotted;cursor:help}
 /* Plan tab */
 .pl-owner{padding:0 24px}
 .pl-owner-name{font-family:var(--font-body);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--black);margin:20px 0 8px}
@@ -366,6 +371,11 @@ tr.cancelled td{opacity:0.35}
   <div class="ins-note" id="homeMeta" style="padding:0 24px 20px"></div>
 </div>
 <div id="page-jobs" class="page">
+
+  <!-- Partial-load banner. Hidden until a batch actually drops rows. Before
+       2026-08-12 this only went to console.warn, so a rate-limited lookup showed
+       up as a normal-looking table with orders missing and nothing said. -->
+  <div id="jobsPartial" class="partial-warn" style="display:none"></div>
 
   <!-- Subheader -->
   <div class="subheader">
@@ -1836,8 +1846,7 @@ async function doLoad(){
       // rate-limited or broken lookup would otherwise show up as a blank cell
       // and nothing else. This codebase has been bitten by silent failures
       // before — say it out loud.
-      if(res.failed?.length)
-        console.warn(`orders batch: ${res.failed.length}/${res.requested} could not be read`, res.failed);
+      reportPartial('orders', res.failed, res.requested);
       for(const id of ids){
         const _or=got[id]??null;
         S.orders[id]=(_or && 'data' in _or && 'meta' in _or)?_or.data:_or;
@@ -1879,6 +1888,33 @@ function paintMedia(orderId){
   if(cells[6])cells[6].innerHTML=`<span class="num-big">${m.videos??'—'}</span>`;
 }
 
+/**
+ * Say partial loads OUT LOUD, on the page.
+ *
+ * The batch endpoints deliberately return null for an id they could not read
+ * rather than failing the whole page. That is the right call, but until
+ * 2026-08-12 the only trace was a console.warn, so a Spiro rate limit rendered
+ * as a normal-looking Jobs table with orders quietly missing. This codebase has
+ * been bitten by "correct behaviour is indistinguishable from failure" before.
+ */
+const partialLoads = {};
+function reportPartial(kind, failed, requested){
+  partialLoads[kind] = (failed && failed.length)
+    ? {n: failed.length, of: requested, ids: failed} : null;
+
+  const el = document.getElementById('jobsPartial');
+  if(!el) return;
+  const active = Object.entries(partialLoads).filter(([,v])=>v);
+  if(!active.length){ el.style.display='none'; el.innerHTML=''; return; }
+
+  el.style.display = 'block';
+  el.innerHTML =
+    active.map(([k,v])=>`<b>${v.n} of ${v.of} ${k}</b> could not be loaded`).join(' · ') +
+    ` — this table is incomplete. Usually Spiro rate limiting; hit Refresh in a moment.` +
+    ` <span class="partial-ids" title="${active.flatMap(([,v])=>v.ids).join('\n')}">ids</span>`;
+  if(active.length) console.warn('partial load', partialLoads);
+}
+
 async function loadMedia(appts){
   const ids=[...new Set(appts.map(a=>a.orderId))].filter(Boolean);
   if(!ids.length) return;
@@ -1887,6 +1923,7 @@ async function loadMedia(appts){
   try{
     const res=await api('/api/media/batch',{method:'POST',body:JSON.stringify({ids})});
     const got=res.media||{};
+    reportPartial('media', res.failed, res.requested);
     ids.forEach(id=>{ S.media[id]=got[id]||{photos:null,videos:null}; paintMedia(id); });
     return;
   }catch(e){
