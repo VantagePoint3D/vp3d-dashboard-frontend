@@ -126,6 +126,20 @@ html,body{height:100%;font-family:var(--font-body);background:var(--bg);color:va
 #page-plan .muted,
 #page-plan .pl-note{color:var(--black);font-size:13px;line-height:1.5}
 #page-plan .pl-note{margin-top:4px}
+/* editing affordances */
+.pl-click{cursor:pointer;border-bottom:1px dotted var(--g300)}
+.pl-click:hover{background:var(--g100)}
+.pl-task-row{cursor:pointer}
+.pl-task-row:hover{background:var(--g100)}
+.pl-caret{display:inline-block;width:14px;color:var(--denim);font-size:11px}
+.pl-prog{margin-left:8px;font-size:11px;font-weight:600;color:var(--denim);
+         background:#e6eef4;padding:1px 6px;border-radius:8px}
+.pl-sub td{background:#fbfbf6}
+.pl-indent{padding-left:30px !important}
+.pl-add{cursor:pointer;font-size:12px;font-weight:600;color:var(--denim)}
+.pl-add:hover{text-decoration:underline}
+.pl-x{cursor:pointer;color:var(--g300);font-size:14px;margin-left:8px;font-weight:700}
+.pl-x:hover{color:#8f2f1c}
 
 /* ── COMING SOON ──────────────────────────────────────── */
 .soon-page{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;color:var(--g400);gap:12px}
@@ -2244,33 +2258,148 @@ async function loadPlan(){
   }
 }
 
-function planTasks(tasks){
-  if(!tasks || !tasks.length) return '';
+// Which task rows are expanded. Kept across re-renders so saving a status does
+// not collapse everything the user had open.
+const planOpen = new Set();
+
+// Status cycles on click: not started -> in progress -> blocked -> done -> ...
+const PLAN_CYCLE = ['not_started','in_progress','blocked','done'];
+function planNextStatus(s){
+  const i = PLAN_CYCLE.indexOf(s);
+  return PLAN_CYCLE[(i<0?0:i+1) % PLAN_CYCLE.length];
+}
+
+/**
+ * One write. Every write carries the updatedAt we last saw so the server can
+ * reject it if the other owner changed the row underneath us (409) rather than
+ * silently overwriting their edit.
+ */
+async function planSave(row){
+  if(!planData || !planData.editable){ showToast('Plan is read-only',true); return; }
+  try{
+    await api('/api/plan/rows',{method:'POST',body:JSON.stringify(row)});
+    await loadPlan();
+  }catch(e){
+    const conflict = String(e.message||'').startsWith('409');
+    showToast(conflict
+      ? 'Someone else changed this. Reloading.'
+      : 'Save failed — check connection', true);
+    if(conflict) await loadPlan();
+  }
+}
+
+async function planDelete(id, label){
+  if(!confirm(`Delete "${label}" and everything under it?`)) return;
+  try{
+    await api('/api/plan/rows/'+encodeURIComponent(id),{method:'DELETE'});
+    await loadPlan();
+  }catch(e){ showToast('Delete failed',true); }
+}
+
+function planFind(id){
+  for(const p of (planData.priorities||[])){
+    if(p.id===id) return p;
+    for(const t of (p.tasks||[])){
+      if(t.id===id) return t;
+      for(const s of (t.subtasks||[])) if(s.id===id) return s;
+    }
+  }
+  return null;
+}
+
+function planCycle(id){
+  const row = planFind(id); if(!row) return;
+  planSave({id, type:row.type, status:planNextStatus(row.status),
+            expectedUpdatedAt:row.updatedAt});
+}
+
+function planEditField(id, field){
+  const row = planFind(id); if(!row) return;
+  const label = {name:'Name', owner:'Owner', due:'Due', note:'Note'}[field] || field;
+  const next = prompt(`${label}:`, row[field]||'');
+  if(next===null || next===row[field]) return;
+  planSave({id, type:row.type, [field]:next, expectedUpdatedAt:row.updatedAt});
+}
+
+function planAdd(type, parentId){
+  const name = prompt(type==='subtask' ? 'New subtask:' :
+                      type==='task'    ? 'New task:' : 'New priority:');
+  if(!name) return;
+  planSave({type, parentId:parentId||'', name});
+}
+
+function planToggle(id){
+  planOpen.has(id) ? planOpen.delete(id) : planOpen.add(id);
+  renderPlan();
+}
+
+function planPill(row){
+  const st = PLAN_STATUS[row.status] || PLAN_STATUS.not_started;
+  return `<span class="pl-pill ${st.cls} pl-click"
+            title="Click to advance status"
+            onclick="event.stopPropagation();planCycle('${row.id}')">${st.label}</span>`;
+}
+
+function planSubtasks(t){
+  const rows = (t.subtasks||[]).map(s=>`
+    <tr class="pl-sub">
+      <td class="pl-indent">
+        <span class="pl-click" onclick="planEditField('${s.id}','name')">${esc(s.name)}</span>
+        ${s.note?`<div class="muted pl-note">${esc(s.note)}</div>`:''}
+      </td>
+      <td class="pl-click" onclick="planEditField('${s.id}','owner')">${esc(s.owner||'—')}</td>
+      <td class="pl-click" onclick="planEditField('${s.id}','due')">${esc(s.due||'—')}</td>
+      <td>${planPill(s)}
+        <span class="pl-x" title="Delete subtask"
+              onclick="event.stopPropagation();planDelete('${s.id}','${esc(s.name)}')">×</span></td>
+    </tr>`).join('');
+  return rows + `<tr class="pl-sub"><td class="pl-indent" colspan="4">
+      <span class="pl-add" onclick="planAdd('subtask','${t.id}')">+ add subtask</span>
+    </td></tr>`;
+}
+
+function planTasks(p){
+  const tasks = p.tasks || [];
+  const body = tasks.map(t=>{
+    const open = planOpen.has(t.id);
+    const pr   = t.progress || {done:0,total:0};
+    const prog = pr.total ? `<span class="pl-prog">${pr.done}/${pr.total}</span>` : '';
+    return `<tr class="pl-task-row" onclick="planToggle('${t.id}')">
+        <td>
+          <span class="pl-caret">${open?'▾':'▸'}</span>
+          <span class="pl-click" onclick="event.stopPropagation();planEditField('${t.id}','name')">${esc(t.name)}</span>
+          ${prog}
+          ${t.note?`<div class="muted pl-note">${esc(t.note)}</div>`:''}
+        </td>
+        <td class="pl-click" onclick="event.stopPropagation();planEditField('${t.id}','owner')">${esc(t.owner||'—')}</td>
+        <td class="pl-click" onclick="event.stopPropagation();planEditField('${t.id}','due')">${esc(t.due||'—')}</td>
+        <td>${planPill(t)}
+          <span class="pl-x" title="Delete task"
+                onclick="event.stopPropagation();planDelete('${t.id}','${esc(t.name)}')">×</span></td>
+      </tr>` + (open ? planSubtasks(t) : '');
+  }).join('');
+
   return `<table class="pl-tasks">
     <thead><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
-    <tbody>${tasks.map(t=>{
-      const st = PLAN_STATUS[t.status] || PLAN_STATUS.not_started;
-      return `<tr>
-        <td>${esc(t.name)}${t.note?`<div class="muted pl-note">${esc(t.note)}</div>`:''}</td>
-        <td>${esc(t.owner||'')}</td>
-        <td>${esc(t.due||'')}</td>
-        <td><span class="pl-pill ${st.cls}">${st.label}</span></td>
-      </tr>`;
-    }).join('')}</tbody></table>`;
+    <tbody>${body}
+      <tr><td colspan="4"><span class="pl-add" onclick="planAdd('task','${p.id}')">+ add task</span></td></tr>
+    </tbody></table>`;
 }
 
 function planOwnerBlock(owner, prios){
   return `<div class="pl-owner">
     <h3 class="pl-owner-name">${esc(owner)}</h3>
-    ${prios.sort((a,b)=>a.rank-b.rank).map(p=>`
+    ${prios.slice().sort((a,b)=>(a.rank||999)-(b.rank||999)).map(p=>`
       <div class="pl-card${p.master?' pl-master':''}">
         <div class="pl-card-head">
-          <span class="pl-rank">${p.master?'1 · MASTER':p.rank}</span>
-          <span class="pl-name">${esc(p.name)}</span>
-          <span class="pl-due">${esc(p.due||'')}</span>
+          <span class="pl-rank">${p.master?(p.rank||1)+' · MASTER':(p.rank||'')}</span>
+          <span class="pl-name pl-click" onclick="planEditField('${p.id}','name')">${esc(p.name)}</span>
+          <span class="pl-due pl-click" onclick="planEditField('${p.id}','due')">${esc(p.due||'—')}</span>
+          <span class="pl-x" title="Delete priority"
+                onclick="planDelete('${p.id}','${esc(p.name)}')">×</span>
         </div>
         ${p.note?`<div class="muted pl-note">${esc(p.note)}</div>`:''}
-        ${planTasks(p.tasks)}
+        ${planTasks(p)}
       </div>`).join('')}
   </div>`;
 }
@@ -2294,21 +2423,24 @@ function renderPlan(){
   const s = d.summary || {};
 
   document.getElementById('planNote').textContent =
-    `Decided ${d.decidedOn} · ${d.window}`;
+    `Decided ${d.decidedOn} · ${d.window}` + (d.editable ? '' : ' · READ ONLY');
 
   document.getElementById('planKpis').innerHTML = [
     ['Priorities', s.priorities],
     ['Tasks', s.tasks],
+    ['Subtasks', s.subtasks],
     ['Blocked', s.blocked],
     ['In progress', s.inProgress],
-    ['Open items', s.openItems]
+    ['Done', s.done]
   ].map(([l,v])=>`<div class="stat"><div class="stat-val">${v==null?'—':v}</div><div class="stat-lbl">${l}</div></div>`).join('');
 
   const byOwner = {};
   (d.priorities||[]).forEach(p=>{ (byOwner[p.owner] = byOwner[p.owner] || []).push(p); });
 
   document.getElementById('planBody').innerHTML =
+    (d.storeNote ? `<div class="pl-sec"><div class="muted pl-note">${esc(d.storeNote)}</div></div>` : '') +
     Object.keys(byOwner).map(o=>planOwnerBlock(o, byOwner[o])).join('') +
+    (d.editable ? `<div class="pl-sec"><span class="pl-add" onclick="planAdd('priority','')">+ add priority</span></div>` : '') +
     planList('Running outside the priority system', d.outside,
              'Date-driven commitments. They do not consume a priority slot and do not wait for promotion.') +
     planList('The bench', d.bench,
