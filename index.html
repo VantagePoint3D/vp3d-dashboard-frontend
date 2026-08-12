@@ -97,6 +97,28 @@ html,body{height:100%;font-family:var(--font-body);background:var(--bg);color:va
 /* ── PAGES ────────────────────────────────────────────── */
 .page{display:none}
 .page.active{display:block}
+/* Plan tab */
+.pl-owner{padding:0 24px}
+.pl-owner-name{font-family:var(--font-body);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--g500);margin:20px 0 8px}
+.pl-card{background:var(--white);border:1px solid var(--g200);border-radius:3px;padding:14px 16px;margin-bottom:10px}
+.pl-card.pl-master{border-left:3px solid var(--denim)}
+.pl-card-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.pl-rank{font-size:10px;font-weight:700;letter-spacing:0.06em;color:var(--denim);text-transform:uppercase;white-space:nowrap}
+.pl-name{font-size:15px;font-weight:600}
+.pl-due{margin-left:auto;font-size:12px;color:var(--g500);white-space:nowrap}
+.pl-note{font-size:12px;line-height:1.45;margin-top:4px}
+.pl-tasks{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+.pl-tasks th{text-align:left;padding:6px 8px;background:var(--g100);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--g500);font-weight:600}
+.pl-tasks td{padding:7px 8px;border-top:1px solid var(--g100);vertical-align:top}
+.pl-pill{display:inline-block;padding:1px 7px;border-radius:2px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap}
+.pl-blocked{background:#fdf0ec;color:#a8402a}
+.pl-progress{background:#e6eef4;color:#35586e}
+.pl-todo{background:var(--g100);color:var(--g500)}
+.pl-done{background:#e4efe4;color:#2f6b2f}
+.pl-sec{padding:0 24px;margin-top:22px}
+.pl-sec-title{font-family:var(--font-body);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--g500);margin-bottom:6px}
+.pl-ul{margin:8px 0 0;padding-left:20px;font-size:13px}
+.pl-ul li{margin-bottom:8px}
 
 /* ── COMING SOON ──────────────────────────────────────── */
 .soon-page{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;color:var(--g400);gap:12px}
@@ -289,6 +311,7 @@ tr.cancelled td{opacity:0.35}
   <div class="navtab" data-min-role="owner" onclick="switchTab('finance',this)">Finance</div>
   <div class="navtab" onclick="switchTab('marketing',this)">Marketing</div>
   <div class="navtab" onclick="switchTab('insights',this)">Insights</div>
+  <div class="navtab" data-min-role="owner" onclick="switchTab('plan',this)">Plan</div>
   <div class="nav-right">
     <span class="apihost-badge" id="hostBadge"></span>
     <button class="btn-sm btn-outline" onclick="doLogout()">Sign out</button>
@@ -531,11 +554,23 @@ tr.cancelled td{opacity:0.35}
   </div>
 </div>
 
+<!-- PLAN: H2 2026 priorities. Content is fetched from /api/plan (manager+ auth),
+     never hardcoded here — this repo is public and served by GitHub Pages. -->
+<div id="page-plan" class="page">
+  <div class="ins-head">
+    <span class="ins-title">H2 2026 Plan</span>
+    <span class="ins-note" id="planNote"></span>
+  </div>
+  <div class="stats" id="planKpis"></div>
+  <div id="planBody"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ── STATE ──────────────────────────────────────────────
 const S = {
+  planLoaded: false,
   marketingLoaded: false,
   needsReplyLoaded: false,
   retentionLoaded: false,
@@ -692,6 +727,7 @@ function switchTab(id, el){
   if(id==='marketing' && !S.marketingLoaded) loadMarketing();
   if(id==='marketing' && !S.retentionLoaded) loadRetention();
   if(id==='marketing' && !S.needsReplyLoaded) loadNeedsReply();
+  if(id==='plan' && !S.planLoaded) loadPlan();
 }
 
 function gotoTab(id){
@@ -2174,6 +2210,106 @@ async function loadNeedsReply(force){
         <td class="nr-links">${links}</td>
       </tr>`;
     }).join('');
+}
+
+// ── PLAN (H2 2026 priorities) ──────────────────────────
+// Data comes from /api/plan, which is manager+ gated. Nothing about the plan is
+// hardcoded in this file: this repo is public and served by GitHub Pages, so
+// anything written here would be readable via view-source by anyone.
+let planData = null;
+
+const PLAN_STATUS = {
+  blocked:     {label:'Blocked',     cls:'pl-blocked'},
+  in_progress: {label:'In progress', cls:'pl-progress'},
+  not_started: {label:'Not started', cls:'pl-todo'},
+  done:        {label:'Done',        cls:'pl-done'}
+};
+
+async function loadPlan(){
+  const body = document.getElementById('planBody');
+  body.innerHTML = '<div class="muted" style="padding:24px">Loading plan…</div>';
+  try{
+    planData = await api('/api/plan');
+    S.planLoaded = true;
+    renderPlan();
+  }catch(e){
+    body.innerHTML = `<div class="muted" style="padding:24px">Plan unavailable: ${esc(e.message)}</div>`;
+  }
+}
+
+function planTasks(tasks){
+  if(!tasks || !tasks.length) return '';
+  return `<table class="pl-tasks">
+    <thead><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
+    <tbody>${tasks.map(t=>{
+      const st = PLAN_STATUS[t.status] || PLAN_STATUS.not_started;
+      return `<tr>
+        <td>${esc(t.name)}${t.note?`<div class="muted pl-note">${esc(t.note)}</div>`:''}</td>
+        <td>${esc(t.owner||'')}</td>
+        <td>${esc(t.due||'')}</td>
+        <td><span class="pl-pill ${st.cls}">${st.label}</span></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function planOwnerBlock(owner, prios){
+  return `<div class="pl-owner">
+    <h3 class="pl-owner-name">${esc(owner)}</h3>
+    ${prios.sort((a,b)=>a.rank-b.rank).map(p=>`
+      <div class="pl-card${p.master?' pl-master':''}">
+        <div class="pl-card-head">
+          <span class="pl-rank">${p.master?'1 · MASTER':p.rank}</span>
+          <span class="pl-name">${esc(p.name)}</span>
+          <span class="pl-due">${esc(p.due||'')}</span>
+        </div>
+        ${p.note?`<div class="muted pl-note">${esc(p.note)}</div>`:''}
+        ${planTasks(p.tasks)}
+      </div>`).join('')}
+  </div>`;
+}
+
+function planList(title, items, hint){
+  if(!items || !items.length) return '';
+  return `<div class="pl-sec">
+    <div class="pl-sec-title">${esc(title)}</div>
+    ${hint?`<div class="muted pl-note">${esc(hint)}</div>`:''}
+    <ul class="pl-ul">${items.map(i=>
+      typeof i === 'string'
+        ? `<li>${esc(i)}</li>`
+        : `<li><b>${esc(i.name)}</b>${i.owner?` · ${esc(i.owner)}`:''}${
+            (i.detail||i.status)?`<div class="muted pl-note">${esc(i.detail||i.status)}</div>`:''}</li>`
+    ).join('')}</ul>
+  </div>`;
+}
+
+function renderPlan(){
+  const d = planData; if(!d) return;
+  const s = d.summary || {};
+
+  document.getElementById('planNote').textContent =
+    `Decided ${d.decidedOn} · ${d.window}`;
+
+  document.getElementById('planKpis').innerHTML = [
+    ['Priorities', s.priorities],
+    ['Tasks', s.tasks],
+    ['Blocked', s.blocked],
+    ['In progress', s.inProgress],
+    ['Open items', s.openItems]
+  ].map(([l,v])=>`<div class="stat"><div class="stat-val">${v==null?'—':v}</div><div class="stat-lbl">${l}</div></div>`).join('');
+
+  const byOwner = {};
+  (d.priorities||[]).forEach(p=>{ (byOwner[p.owner] = byOwner[p.owner] || []).push(p); });
+
+  document.getElementById('planBody').innerHTML =
+    Object.keys(byOwner).map(o=>planOwnerBlock(o, byOwner[o])).join('') +
+    planList('Running outside the priority system', d.outside,
+             'Date-driven commitments. They do not consume a priority slot and do not wait for promotion.') +
+    planList('The bench', d.bench,
+             'Promotes when an active priority completes, or stalls for 14 days.') +
+    planList('Deferred to 2027', d.deferred2027) +
+    planList('Still open', d.openItems) +
+    planList('Operating rules', d.rules) +
+    `<div class="muted pl-note" style="padding:12px 0 24px">Source of record: ${esc(d.sourceOfRecord||'')}. If this page and that file disagree, the file wins.</div>`;
 }
 </script>
 </body>
